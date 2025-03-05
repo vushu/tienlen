@@ -71,11 +71,44 @@ initialize_game_two_players(GameState) :- start_game(P1, P2, (Player, Card)),
 
 get_next_move(game_state(_, _, _, _,Move), Move).
 
-is_move_valid(Move) :- true. % For now.
+% is_move_valid(CardsInPlay, Move) :- true. % For now.
 
-make_next_move(game_state(Hands, _, _, _, next_move(Move))) :-
-    is_move_valid(Move), (Player, Cards) = Move. 
-    % TODO extract the cards from the player hands
+tienlen_hand([C], single_card(C)). % any single card is OK if no cards in play.
+tienlen_hand([card(R, S), card(R, S2)], pair(card(R, S), card(R, S2))).
+tienlen_hand([card(R, S), card(R, S2), card(R, S3)], three_of_kind(card(R,S), card(R, S2), card(S3))).
+tienlen_hand([card(R, S), card(R, S2), card(R, S3), card(R, S4)], four_of_kind(card(R,S), card(R, S2), card(R, S3), card(R, S4))).
+tienlen_hand(Cards, sequence(Cards)) :-
+    is_card_sequence(Cards), !.
+
+tienlen_hand(Cards, double_sequence(Cards)) :-
+    is_card_double_sequence(Cards), !.
+
+is_card_sequence([card(R, _), card(R2,_), card(R3, _) | T ]) :-
+    next(R, R2), next(R2, R3), next_rank_is_greater(R3, T).
+
+is_card_double_sequence([card(R, _), card(R, _), card(R2, _), card(R2,_), card(R3, _), card(R3, _) | T]) :-
+    next(R, R2), next(R2, R3), next_rank_is_greater_double(R3, T).
+
+next(3, 4).
+next(4, 5).
+next(5, 6).
+next(6, 7).
+next(7, 8).
+next(8, 9).
+next(9, 10).
+next(10, j).
+next(j, q).
+next(q, k).
+next(k, a).
+next(a, 2).
+
+next_rank_is_greater(_,[]).
+next_rank_is_greater(PreviousRank, [card(R, _) | Rest]) :-
+    next(PreviousRank, R), next_rank_is_greater(R, Rest).
+
+next_rank_is_greater_double(_,[]).
+next_rank_is_greater_double(PreviousRank, [card(R, _), card(R, _) | Rest]) :- write(R),
+    next(PreviousRank, R), next_rank_is_greater_double(R, Rest).
 
 %--------------- UNIT TESTS -------------------
 :- use_module(library(plunit)).
@@ -108,6 +141,32 @@ test(next_move_is_player_places_lowest_card) :-
     initialize_game_predefined_full_players(GameState),!, 
     get_next_move(GameState, NextMove),
     assertion(NextMove = next_move(3, place([card(3, spades)]))).
+
+test(is_tienlen_hand_single_card) :- 
+    tienlen_hand([card(4, spades)], single_card(card(4, spades))).
+
+test(is_tienlen_hand_pair) :- 
+    tienlen_hand([card(4, spades), card(4, clubs)], pair(_, _)).
+
+test(is_tienlen_hand_three_of_kind) :- 
+    tienlen_hand([card(4, spades), card(4, clubs), card(4, diamonds)], three_of_kind(_, _, _)).
+
+test(is_tienlen_hand_four_of_kind) :- 
+    tienlen_hand([card(a, spades), card(a, clubs), card(a, diamonds), card(a, hearts)], four_of_kind(_, _, _, _)).
+
+test(is_tienlen_hand_sequence_of_three) :- 
+    tienlen_hand([card(3, spades), card(4, clubs), card(5, diamonds)], sequence([_, _, _])).
+
+
+test(is_tienlen_hand_sequence_of_four) :- 
+    tienlen_hand([card(3, spades), card(4, clubs), card(5, diamonds), card(6, hearts)], sequence([_, _, _, _])).
+
+test(is_tienlen_hand_sequence_double_of_3) :- 
+    tienlen_hand([card(3, spades), card(3, clubs), card(4, diamonds), card(4, hearts), card(5, spades), card(5, hearts)], double_sequence(_)).
+
+test(is_tienlen_hand_sequence_double_of_4) :- 
+    tienlen_hand([card(3, spades), card(3, clubs), card(4, diamonds), card(4, hearts), card(5, spades), card(5, hearts), card(6, clubs), card(6, diamonds)], double_sequence(_)).
+
 
 initialize_game_predefined_full_players(GameState) :- 
     get_predefined_hands(P1, P2, P3, P4),
