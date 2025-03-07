@@ -110,6 +110,51 @@ next_rank_is_greater_double(_,[]).
 next_rank_is_greater_double(PreviousRank, [card(R, _), card(R, _) | Rest]) :- write(R),
     next(PreviousRank, R), next_rank_is_greater_double(R, Rest).
 
+rank_order(R1, R2) :-
+    (next(R1, R2); (next(R1, X), rank_order(X, R2))).
+
+% Custom sorting predicate using score.
+sort_by_score(List, Sorted) :-
+    predsort(compare_card_scores, List, Sorted).
+
+compare_card_scores(Order, card(R1, S1), card(R2, S2)) :-
+    card_score(card(R1, S1), Score1),
+    card_score(card(R2, S2), Score2),
+    compare(Order, Score1, Score2).
+
+get_possible_groupings(Cards, Groupings) :-
+    find_groupings(Cards, Pairs, Singles),
+    sort_pairs_by_score(Pairs, SortedPairs),     % Sort pairs based on card score
+    sort_by_score(Singles, SortedSingles),       % Sort singles based on card score
+    Groupings = [pairs(SortedPairs), singles(SortedSingles)].
+
+% Sorting pairs while maintaining correct internal order.
+sort_pairs_by_score(Pairs, SortedPairs) :-
+    maplist(sort_pair, Pairs, SortedPairs),
+    sort_by_score(SortedPairs, SortedPairs).
+
+% Ensures each pair is internally sorted by score.
+sort_pair(pair(Card1, Card2), pair(Sorted1, Sorted2)) :-
+    sort_by_score([Card1, Card2], [Sorted1, Sorted2]).
+
+find_groupings([], [], []).
+find_groupings(Cards, [pair(card(R, X), card(R, Y)) | Pairs], Singles) :-
+    select(card(R, X), Cards, Rest1),
+    select(card(R, Y), Rest1, Rest2),
+    find_groupings(Rest2, Pairs, Singles).
+
+find_groupings(Cards, [], SortedSingles) :-
+    findall(card(R, S), member(card(R, S), Cards), SinglesList),
+    sort_by_score(SinglesList, SortedSingles). % Sort singles by score
+
+find_tienlen_hands([], []).
+
+find_tienlen_hands([card(R,S) | T], [single(card(R,S))| Rest]) :-
+    find_tienlen_hands(T, Rest).
+
+find_tienlen_hands([card(R,S), card(R, S2) | T], [pair(card(R,S), card(R, S2))| Rest]) :-
+    find_tienlen_hands(T, Rest).
+
 %--------------- UNIT TESTS -------------------
 :- use_module(library(plunit)).
 
@@ -157,7 +202,6 @@ test(is_tienlen_hand_four_of_kind) :-
 test(is_tienlen_hand_sequence_of_three) :- 
     tienlen_hand([card(3, spades), card(4, clubs), card(5, diamonds)], sequence([_, _, _])).
 
-
 test(is_tienlen_hand_sequence_of_four) :- 
     tienlen_hand([card(3, spades), card(4, clubs), card(5, diamonds), card(6, hearts)], sequence([_, _, _, _])).
 
@@ -167,6 +211,21 @@ test(is_tienlen_hand_sequence_double_of_3) :-
 test(is_tienlen_hand_sequence_double_of_4) :- 
     tienlen_hand([card(3, spades), card(3, clubs), card(4, diamonds), card(4, hearts), card(5, spades), card(5, hearts), card(6, clubs), card(6, diamonds)], double_sequence(_)).
 
+test(sort_hand_by_score) :-
+    Hand = [card(2, diamonds),card(3,clubs), card(4, hearts), card(4, spades)],
+    sort_by_score(Hand, SortedHand), 
+    assertion(SortedHand = [card(3,clubs),card(4,spades),card(4,hearts),card(2,diamonds)]).
+
+test(find_tienlen_hands) :-
+    Hand = [card(2, diamonds),card(3,clubs), card(4, hearts), card(4, spades)],
+    sort_by_score(Hand, SortedHand), 
+    find_tienlen_hands(SortedHand, FoundHands).
+
+some_test(FoundHands) :-
+    % Hand = [card(2, diamonds),card(3,clubs), card(4, hearts), card(4, spades)],
+    get_predefined_hands(Hand, _, _,_),
+    sort_by_score(Hand, SortedHand), 
+    find_tienlen_hands(SortedHand, FoundHands).
 
 initialize_game_predefined_full_players(GameState) :- 
     get_predefined_hands(P1, P2, P3, P4),
@@ -180,5 +239,13 @@ get_predefined_hands(P1, P2, P3, P4) :-
     P3 = [card(k,spades),card(a,hearts),card(7,clubs),card(a,diamonds),card(j,hearts),card(8,spades),card(8,diamonds),card(j,clubs),card(5,clubs),card(q,spades),card(4,clubs),card(10,clubs),card(6,clubs)],
     P4 = [card(2,clubs),card(9,clubs),card(3,spades),card(3,diamonds),card(4,diamonds),card(7,diamonds),card(4,hearts),card(j,diamonds),card(10,spades),card(k,diamonds),card(6,hearts),card(8,hearts),card(10,hearts)].
 
-:- end_tests(tienlen).
+get_test_hand(Hand) :-
+    Hand = [card(q,diamonds),card(5,diamonds),card(a,clubs),card(3,hearts),card(3,clubs),card(10,diamonds),card(2,diamonds),card(8,clubs),card(5,spades),card(7,spades),card(5,hearts),card(7,hearts),card(k,clubs)].
 
+get_small_test_hand(Hand) :-
+    Hand = [card(q,diamonds),card(k,clubs), card(a, hearts), card(a, diamonds)].
+
+get_small_numbered_hand(Hand) :-
+    Hand = [card(2, diamonds),card(3,clubs), card(4, hearts), card(4, spades)].
+
+:- end_tests(tienlen).
