@@ -100,7 +100,7 @@ next(10, j).
 next(j, q).
 next(q, k).
 next(k, a).
-next(a, 2).
+% next(a, 2).
 
 next_rank_is_greater(_,[]).
 next_rank_is_greater(PreviousRank, [card(R, _) | Rest]) :-
@@ -154,6 +154,19 @@ find_tienlen_hands([card(R,S) | T], [single(card(R,S))| Rest]) :-
 
 find_tienlen_hands([card(R,S), card(R, S2) | T], [pair(card(R,S), card(R, S2))| Rest]) :-
     find_tienlen_hands(T, Rest).
+
+find_tienlen_hands([card(R1, S1), card(R2,S2), card(R3, S3) | T ], [sequence([card(R1, S1), card(R2, S2), card(R3, S3) | MoreSeq]) | Rest]) :-
+    next(R1, R2),
+    next(R2, R3),
+    extended_sequence(R3, T, MoreSeq, Remaining),
+    find_tienlen_hands(Remaining, Rest).
+
+extended_sequence(PreviousRank,[card(R1, S1) | T], [card(R1, S1) | MoreSequence], Remaining) :-
+    next(PreviousRank, R1),
+    extended_sequence(R1,T, MoreSequence, Remaining).
+
+extended_sequence(_,Remaining, [], Remaining) :- writeln('stop').
+
 
 %--------------- UNIT TESTS -------------------
 :- use_module(library(plunit)).
@@ -222,8 +235,8 @@ test(find_tienlen_hands) :-
     find_tienlen_hands(SortedHand, FoundHands).
 
 some_test(FoundHands) :-
-    % Hand = [card(2, diamonds),card(3,clubs), card(4, hearts), card(4, spades)],
-    get_predefined_hands(Hand, _, _,_),
+    % Hand = [card(q, clubs),card(2, diamonds),card(3,clubs), card(4, hearts), card(4, spades), card(q, spades),
+    Hand = [card(j,spades), card(q,diamonds), card(k, hearts), card(a, clubs)],
     sort_by_score(Hand, SortedHand), 
     find_tienlen_hands(SortedHand, FoundHands).
 
