@@ -71,6 +71,11 @@ initialize_game_two_players(GameState) :- start_game(P1, P2, (Player, Card)),
 
 get_next_move(game_state(_, _, _, _,Move), Move).
 
+% interpret_tienlen(game_state([P1, P2, P3, P4], [], [], [], next_move(Player, place([Card]))) :-
+    % select('Param1', 'Param2', 'Param3')
+    
+
+
 % is_move_valid(CardsInPlay, Move) :- true. % For now.
 
 tienlen_hand([C], single(C)). % any single card is OK if no cards in play.
@@ -176,31 +181,6 @@ compare_card_scores(Order, card(R1, S1), card(R2, S2)) :-
     card_score(card(R1, S1), Score1),
     card_score(card(R2, S2), Score2),
     compare(Order, Score1, Score2).
-
-get_possible_groupings(Cards, Groupings) :-
-    find_groupings(Cards, Pairs, Singles),
-    sort_pairs_by_score(Pairs, SortedPairs),     % Sort pairs based on card score
-    sort_by_score(Singles, SortedSingles),       % Sort singles based on card score
-    Groupings = [pairs(SortedPairs), singles(SortedSingles)].
-
-% Sorting pairs while maintaining correct internal order.
-sort_pairs_by_score(Pairs, SortedPairs) :-
-    maplist(sort_pair, Pairs, SortedPairs),
-    sort_by_score(SortedPairs, SortedPairs).
-
-% Ensures each pair is internally sorted by score.
-sort_pair(pair(Card1, Card2), pair(Sorted1, Sorted2)) :-
-    sort_by_score([Card1, Card2], [Sorted1, Sorted2]).
-
-find_groupings([], [], []).
-find_groupings(Cards, [pair(card(R, X), card(R, Y)) | Pairs], Singles) :-
-    select(card(R, X), Cards, Rest1),
-    select(card(R, Y), Rest1, Rest2),
-    find_groupings(Rest2, Pairs, Singles).
-
-find_groupings(Cards, [], SortedSingles) :-
-    findall(card(R, S), member(card(R, S), Cards), SinglesList),
-    sort_by_score(SinglesList, SortedSingles). % Sort singles by score
 
 find_tienlen_hands([], []).
 
@@ -338,6 +318,21 @@ test(winning_hand_sequence_cards) :-
 
 test(double_sequence_beats_single_2) :-
     beats(double_sequence([card(5, spades), card(5, diamonds), card(6, hearts), card(6, clubs), card(7, spades), card(7, diamonds)]), single(card(2, hearts))).
+
+test(double_sequence_beats_pair_2) :-
+    beats(double_sequence([card(5, spades), card(5, diamonds), 
+        card(6, hearts), card(6, clubs),
+        card(7, spades), card(7, diamonds),
+        card(8, clubs), card(8, spades)]), 
+    pair([card(2, hearts), card(2, spades)])).
+
+test(double_sequence_beats_three_of_kind_2) :-
+    beats(double_sequence([card(5, spades), card(5, diamonds), 
+        card(6, hearts), card(6, clubs),
+        card(7, spades), card(7, diamonds),
+        card(8, clubs), card(8, spades),
+        card(9, clubs), card(9, spades)]), 
+    three_of_kind([card(2, hearts), card(2, spades), card(2, diamonds)])).
 
 initialize_game_predefined_full_players(GameState) :- 
     get_predefined_hands(P1, P2, P3, P4),
