@@ -1,5 +1,6 @@
 :- module(tienlen, [card_score/2, start_game/3, start_game/4, start_game/5, initialize_game_full_players/1, initialize_game_three_players/1, initialize_game_two_players/1]).
 :- use_module(cards).
+:- use_module(library(ordsets)).
 
 rank_value(3, 3). rank_value(4, 4). rank_value(5, 5).
 rank_value(6, 6). rank_value(7, 7). rank_value(8, 8).
@@ -51,7 +52,6 @@ no_hands_has_been_played(Lists) :-
 
 is_full_hand(H) :- length(H, 13).
 
-
 player_with_lowest_card(Cards, R) :-
     find_lowest_scored_card(Cards, C),
     nth0(Index, Cards, C),
@@ -60,23 +60,69 @@ player_with_lowest_card(Cards, R) :-
 
 % number_of_cards
 
-initialize_game_full_players(GameState) :- start_game(P1, P2, P3, P4, (Player, Card)),
-    GameState = game_state([P1, P2, P3, P4], [], [], [], next_move(Player, place([Card]))).
+initialize_game_full_players(GameState) :- start_game(P1, P2, P3, P4, (PlayerIndex, Card)),
+    GameState = game_state([P1, P2, P3, P4], [], none, [], next_move(PlayerIndex, place(single(Card)))).
 
-initialize_game_three_players(GameState) :- start_game(P1, P2, P3, (Player, Card)),
-    GameState = game_state([P1, P2, P3], [], [], [], next_move(Player, place([Card]))).
+initialize_game_three_players(GameState) :- start_game(P1, P2, P3, (PlayerIndex, Card)),
+    GameState = game_state([P1, P2, P3], [], none, [], next_move(PlayerIndex, place(single(Card)))).
     
-initialize_game_two_players(GameState) :- start_game(P1, P2, (Player, Card)),
-    GameState = game_state([P1, P2], [], [], [], next_move(Player, place([Card]))).
+initialize_game_two_players(GameState) :- start_game(P1, P2, (PlayerIndex, Card)),
+    GameState = game_state([P1, P2], [], none, [], next_move(PlayerIndex, place(single(Card)))).
 
 get_next_move(game_state(_, _, _, _,Move), Move).
 
-% interpret_tienlen(game_state([P1, P2, P3, P4], [], [], [], next_move(Player, place([Card]))) :-
-    % select('Param1', 'Param2', 'Param3')
-    
+simulate_skip_move(game_state(Hands, ScoreBoard, CardsInplay, DiscardedCards, next_move(PlayerIndex, make_move)), 
+    game_state(Hands, ScoreBoard, CardsInplay, DiscardedCards, next_move(PlayerIndex, skip))).
+
+simulate_placing_cards(Cards, game_state(Hands, ScoreBoard, CardsInplay, DiscardedCards, next_move(PlayerIndex, make_move)), 
+    game_state(Hands, ScoreBoard, CardsInplay, DiscardedCards, next_move(PlayerIndex, place(Cards)))).
+
+remove_cards([], Hand, Hand).
+remove_cards([H | T], Hand, Rest) :-
+    select(H, Hand, Remaining), 
+    remove_cards(T, Remaining, Rest).
 
 
-% is_move_valid(CardsInPlay, Move) :- true. % For now.
+update_hands(EndIndex, Hands, Hand, UpdatedHands) :-
+    update_hands_(EndIndex, 0, Hands, Hand, UpdatedHands).
+
+update_hands_(EndIndex, EndIndex, [_ | T], Hand , [Hand | T]).
+update_hands_(EndIndex, CurrentIndex, [H | T], Hand, [H|UpdatedHands]) :-
+    NextIndex is CurrentIndex + 1,
+    update_hands_(EndIndex, NextIndex, T, Hand, UpdatedHands).
+
+whos_next(NumberOfPlayers, PlayerIndex, NextPlayer) :- 
+    Temp is PlayerIndex + 1,
+    (Temp >= NumberOfPlayers -> NextPlayer = 0; NextPlayer = Temp).
+
+player_beats_cards_in_play(PlayerIndex, Hands, CardsInplay, PlacedCards, UpdatedHands) :-
+    beats(PlacedCards, CardsInplay),
+    find_tienlen_hands(RawCards,[PlacedCards]), % Really smart this prolog, using the other direction soo cool to unwrap the cards :D
+    % writeln(RawCards),
+    nth0(PlayerIndex, Hands, PlayerHand),
+    remove_cards(RawCards, PlayerHand, NewPlayerHand),
+    update_hands(PlayerIndex, Hands, NewPlayerHand, UpdatedHands).
+
+interpret_tienlen(game_state(Hands, [], none, [], next_move(PlayerIndex, place(single(Cards)))), GameState) :-
+    nth0(PlayerIndex, Hands, Hand),
+    remove_cards([Cards], Hand, Rest),
+    update_hands(PlayerIndex, Hands, Rest, UpdatedHands),
+    length(Hands, NumberOfPlayers),
+    whos_next(NumberOfPlayers, PlayerIndex, NextPlayerIndex),
+    GameState = game_state(UpdatedHands,[], single(Cards), [], next_move(NextPlayerIndex, make_move)),!.
+
+interpret_tienlen(game_state(Hands, ScoreBoard, CardsInplay, DiscardedCards, next_move(PlayerIndex, skip)), GameState) :-
+    length(Hands, NumberOfPlayers),
+    whos_next(NumberOfPlayers, PlayerIndex, NextPlayerIndex),
+    GameState = game_state(Hands, ScoreBoard, CardsInplay, DiscardedCards, next_move(NextPlayerIndex, make_move)),!.
+
+interpret_tienlen(game_state(Hands, [], CardsInplay, DiscardedCards, next_move(PlayerIndex, place(Cards))), GameState) :-
+    player_beats_cards_in_play(PlayerIndex, Hands, CardsInplay, Cards, UpdatedHands),
+    length(Hands, NumberOfPlayers),
+    whos_next(NumberOfPlayers, PlayerIndex, NextPlayerIndex),
+    append(DiscardedCards, [CardsInplay], NewDiscardedCards),
+    GameState = game_state(UpdatedHands,[], Cards, NewDiscardedCards, next_move(NextPlayerIndex, make_move)),!.
+
 
 tienlen_hand([C], single(C)). % any single card is OK if no cards in play.
 tienlen_hand([card(R, S), card(R, S2)], pair([card(R, S), card(R, S2)])).
@@ -206,7 +252,7 @@ extended_sequence(PreviousRank,[card(R1, S1) | T], [card(R1, S1) | MoreSequence]
     next(PreviousRank, R1),
     extended_sequence(R1,T, MoreSequence, Remaining).
 
-extended_sequence(_,Remaining, [], Remaining) :- writeln('stop').
+extended_sequence(_,Remaining, [], Remaining).
 
 
 %--------------- UNIT TESTS -------------------
@@ -239,7 +285,7 @@ test(first_round) :-
 test(next_move_is_player_places_lowest_card) :-
     initialize_game_predefined_full_players(GameState),!, 
     get_next_move(GameState, NextMove),
-    assertion(NextMove = next_move(3, place([card(3, spades)]))).
+    assertion(NextMove = next_move(3, place(single(card(3, spades))))).
 
 test(is_tienlen_hand_single_card) :- 
     tienlen_hand([card(4, spades)], single(card(4, spades))).
@@ -334,11 +380,33 @@ test(double_sequence_beats_three_of_kind_2) :-
         card(9, clubs), card(9, spades)]), 
     three_of_kind([card(2, hearts), card(2, spades), card(2, diamonds)])).
 
+test(interpret_game_first_move) :-
+    get_predefined_game(GameState),
+    interpret_tienlen(GameState, NewGameState), get_next_move(NewGameState, next_move(0, make_move)).
+
+test(interpret_game_skip_move) :-
+    get_predefined_game(GameState),
+    interpret_tienlen(GameState, FirstGameState), get_next_move(FirstGameState, next_move(0, make_move)),
+    simulate_skip_move(FirstGameState, SkippedGameState), 
+    interpret_tienlen(SkippedGameState, SecondGameState),
+    get_next_move(SecondGameState, next_move(1, make_move)).
+
+test(interpret_game_placing_single_card) :-
+    get_predefined_game(GameState),
+    interpret_tienlen(GameState, FirstGameState), get_next_move(FirstGameState, next_move(0, make_move)),
+    simulate_placing_cards(single(card(3,hearts)), FirstGameState, SecondGameState),
+    interpret_tienlen(SecondGameState, game_state([P1, _,_, P4], _, CardsInplay, DiscardedCards, NextMove)),
+    assertion(CardsInplay = single(card(3, hearts))),
+    assertion(DiscardedCards = [single(card(3, spades))]),
+    assertion(NextMove = next_move(1, make_move)),
+    length(P1, L), 
+    length(P4, L).
+
 initialize_game_predefined_full_players(GameState) :- 
     get_predefined_hands(P1, P2, P3, P4),
     append_multiple([P1, P2, P3, P4], Cards),
     player_with_lowest_card(Cards, (Player, Card)),!,
-    GameState = game_state([P1, P2, P3, P4], [0, 0, 0, 0], [], [], next_move(Player, place([Card]))).
+    GameState = game_state([P1, P2, P3, P4], [0, 0, 0, 0], [], [], next_move(Player, place(single(Card)))).
 
 get_predefined_hands(P1, P2, P3, P4) :-
     P1 = [card(q,diamonds),card(5,diamonds),card(a,clubs),card(3,hearts),card(3,clubs),card(10,diamonds),card(2,diamonds),card(8,clubs),card(5,spades),card(7,spades),card(5,hearts),card(7,hearts),card(k,clubs)],
@@ -359,7 +427,10 @@ get_hands_test(FoundHands) :-
     Hand = [card(j,spades), card(q,diamonds), card(k, hearts), card(a, clubs)],
     sort_by_score(Hand, SortedHand), 
     findall(FoundHand, find_tienlen_hands(SortedHand, FoundHand), FoundHands).
-    
+
+get_predefined_game(GameState) :-
+    get_predefined_hands(P1, P2, P3, P4),
+    GameState = game_state([P1, P2, P3, P4], [], none, [], next_move(3, place(single(card(3, spades))))).
     
 
 :- end_tests(tienlen).
