@@ -73,10 +73,10 @@ get_next_move(game_state(_, _, _, _,Move), Move).
 
 % is_move_valid(CardsInPlay, Move) :- true. % For now.
 
-tienlen_hand([C], single_card(C)). % any single card is OK if no cards in play.
-tienlen_hand([card(R, S), card(R, S2)], pair(card(R, S), card(R, S2))).
-tienlen_hand([card(R, S), card(R, S2), card(R, S3)], three_of_kind(card(R,S), card(R, S2), card(S3))).
-tienlen_hand([card(R, S), card(R, S2), card(R, S3), card(R, S4)], four_of_kind(card(R,S), card(R, S2), card(R, S3), card(R, S4))).
+tienlen_hand([C], single(C)). % any single card is OK if no cards in play.
+tienlen_hand([card(R, S), card(R, S2)], pair([card(R, S), card(R, S2)])).
+tienlen_hand([card(R, S), card(R, S2), card(R, S3)], three_of_kind([card(R,S), card(R, S2), card(S3)])).
+tienlen_hand([card(R, S), card(R, S2), card(R, S3), card(R, S4)], four_of_kind([card(R,S), card(R, S2), card(R, S3), card(R, S4)])).
 tienlen_hand(Cards, sequence(Cards)) :-
     is_card_sequence(Cards), !.
 
@@ -101,6 +101,61 @@ next(j, q).
 next(q, k).
 next(k, a).
 % next(a, 2).
+
+highest_card(C1, C2, R) :-
+    card_score(C1, CScore),
+    card_score(C2, C1Score), (CScore >= C1Score ->  R = C1; R = C2).
+
+highest_card_in_list([H | T], Found) :-
+    highest_card_in_list_(T, H, Found).
+
+highest_card_in_list_([], F, F).
+highest_card_in_list_([H | T], CurrentHighest, Found) :-
+    highest_card(H, CurrentHighest, NewHighest),
+    highest_card_in_list_(T, NewHighest, Found).
+
+beats(single(C1), single(C2)) :-
+    highest_card(C1, C2, C1), !.
+
+beats(pair(C1), pair(C2)) :-
+    highest_card_in_list(C1, F1),
+    highest_card_in_list(C2, F2),
+    highest_card(F1, F2, F1),!.
+
+beats(three_of_kind(C1), three_of_kind(C2)) :-
+    highest_card_in_list(C1, F1),
+    highest_card_in_list(C2, F2),
+    highest_card(F1, F2, F1),!.
+
+beats(four_of_kind(C1), four_of_kind(C2)) :-
+    highest_card_in_list(C1, F1),
+    highest_card_in_list(C2, F2),
+    highest_card(F1, F2, F1).
+
+beats(sequence(C1), sequence(C2)) :-
+    length(C1, L),
+    length(C2, L),
+    highest_card_in_list(C1, F1),
+    highest_card_in_list(C2, F2),
+    highest_card(F1, F2, F1).
+
+beats(double_sequence(C1), double_sequence(C2)) :-
+    length(C1, L),
+    length(C2, L),
+    highest_card_in_list(C1, F1),
+    highest_card_in_list(C2, F2),
+    highest_card(F1, F2, F1).
+
+% Bombs
+beats(double_sequence(_), single(card(2, _))) :- !.
+
+beats(four_of_kind(_), single(card(2, _))).
+
+beats(double_sequence(N), pair([card(2, _), card(2,_)])) :-
+    length(N, 8), !.
+
+beats(double_sequence(N), three_of_kind([card(2, _), card(2,_), card(2, _)])) :-
+    length(N, 10), !.
 
 next_rank_is_greater(_,[]).
 next_rank_is_greater(PreviousRank, [card(R, _) | Rest]) :-
@@ -154,6 +209,12 @@ find_tienlen_hands([card(R,S) | T], [single(card(R,S))| Rest]) :-
 
 find_tienlen_hands([card(R,S), card(R, S2) | T], [pair(card(R,S), card(R, S2))| Rest]) :-
     find_tienlen_hands(T, Rest).
+ 
+find_tienlen_hands([card(R,S), card(R, S2), card(R, S3) | T], [three_of_kind(card(R,S), card(R, S2), card(R, S3)) | Rest]) :-
+    find_tienlen_hands(T, Rest).
+
+find_tienlen_hands([card(R,S), card(R, S2), card(R, S3), card(R, S4) | T], [four_of_kind(card(R,S), card(R, S2), card(R, S3), card(R, S4)) | Rest]) :-
+    find_tienlen_hands(T, Rest).
 
 find_tienlen_hands([card(R1, S1), card(R2,S2), card(R3, S3) | T ], [sequence([card(R1, S1), card(R2, S2), card(R3, S3) | MoreSeq]) | Rest]) :-
     next(R1, R2),
@@ -201,16 +262,16 @@ test(next_move_is_player_places_lowest_card) :-
     assertion(NextMove = next_move(3, place([card(3, spades)]))).
 
 test(is_tienlen_hand_single_card) :- 
-    tienlen_hand([card(4, spades)], single_card(card(4, spades))).
+    tienlen_hand([card(4, spades)], single(card(4, spades))).
 
 test(is_tienlen_hand_pair) :- 
-    tienlen_hand([card(4, spades), card(4, clubs)], pair(_, _)).
+    tienlen_hand([card(4, spades), card(4, clubs)], pair(_)).
 
 test(is_tienlen_hand_three_of_kind) :- 
-    tienlen_hand([card(4, spades), card(4, clubs), card(4, diamonds)], three_of_kind(_, _, _)).
+    tienlen_hand([card(4, spades), card(4, clubs), card(4, diamonds)], three_of_kind(_)).
 
 test(is_tienlen_hand_four_of_kind) :- 
-    tienlen_hand([card(a, spades), card(a, clubs), card(a, diamonds), card(a, hearts)], four_of_kind(_, _, _, _)).
+    tienlen_hand([card(a, spades), card(a, clubs), card(a, diamonds), card(a, hearts)], four_of_kind(_)).
 
 test(is_tienlen_hand_sequence_of_three) :- 
     tienlen_hand([card(3, spades), card(4, clubs), card(5, diamonds)], sequence([_, _, _])).
@@ -229,16 +290,54 @@ test(sort_hand_by_score) :-
     sort_by_score(Hand, SortedHand), 
     assertion(SortedHand = [card(3,clubs),card(4,spades),card(4,hearts),card(2,diamonds)]).
 
-test(find_tienlen_hands) :-
-    Hand = [card(2, diamonds),card(3,clubs), card(4, hearts), card(4, spades)],
+test(find_tienlen_hands_four_of_kind) :-
+    Hand = [card(2, spades),card(2, clubs), card(2, diamonds), card(2, hearts)],
     sort_by_score(Hand, SortedHand), 
-    find_tienlen_hands(SortedHand, FoundHands).
+    findall(FoundHand,find_tienlen_hands(SortedHand, FoundHand), FoundHands), length(FoundHands, L),
+    assertion(L = 8).
 
-some_test(FoundHands) :-
-    % Hand = [card(q, clubs),card(2, diamonds),card(3,clubs), card(4, hearts), card(4, spades), card(q, spades),
-    Hand = [card(j,spades), card(q,diamonds), card(k, hearts), card(a, clubs)],
-    sort_by_score(Hand, SortedHand), 
-    find_tienlen_hands(SortedHand, FoundHands).
+test(get_possible_hands) :-
+    get_hands_test(Hands), length(Hands, 4).
+
+test(winning_hand_single_cards, [fail]) :-
+    beats(single((card(3,spades))), single(card(3, diamonds))).
+
+test(winning_hand_single_cards) :-
+    beats(single((card(a,spades))), single(card(3, diamonds))).
+
+test(winning_hand_pair_cards) :-
+    beats(pair([card(a, spades), card(a, diamonds)]), pair([card(q, diamonds), card(q, clubs)])).
+
+test(winning_hand_pair_cards, [fail]) :-
+    beats(pair([card(a, spades), card(a, diamonds)]), pair([card(a, clubs), card(a, hearts)])).
+
+test(winning_hand_three_of_kind_cards, [fail]) :-
+    beats(three_of_kind([card(5, spades), card(5, diamonds), card(5, hearts)]), three_of_kind([card(6, clubs), card(6, diamonds), card(6, hearts)])).
+
+test(winning_hand_three_of_kind_cards) :-
+    beats(three_of_kind([card(7, spades), card(7, diamonds), card(7, hearts)]), three_of_kind([card(6, clubs), card(6, diamonds), card(6, hearts)])).
+
+test(winning_hand_four_of_kind_cards) :-
+    beats(four_of_kind([card(7, spades), card(7, diamonds), card(7, hearts), card(7, clubs)]), four_of_kind([card(6, clubs), card(6, diamonds), card(6, hearts), card(6, spades)])).
+
+test(winning_hand_four_of_kind_cards, [fail]) :-
+    beats(four_of_kind([card(6, spades), card(6, diamonds), card(6, hearts), card(6, clubs)]), four_of_kind([card(8, clubs), card(8, diamonds), card(8, hearts), card(8, spades)])).
+
+test(winning_hand_sequence_cards, [fail]) :-
+    beats(sequence([card(3, spades), card(4, diamonds), card(5, hearts), card(6, clubs)]), sequence([card(4, clubs), card(5, diamonds), card(6, hearts), card(7, spades)])).
+
+test(winning_hand_sequence_cards) :-
+    beats(sequence([card(5, spades), card(6, diamonds), card(7, hearts), card(8, clubs)]), sequence([card(4, clubs), card(5, diamonds), card(6, hearts), card(7, spades)])).
+
+test(winning_hand_sequence_cards, [fail]) :-
+    beats(double_sequence([card(5, spades), card(5, diamonds), card(6, hearts), card(6, clubs), card(7, spades), card(7, diamonds)]), double_sequence([card(8, clubs), card(8, diamonds), card(9, hearts), card(9, spades), card(10, spades), card(10, clubs)])).
+
+test(winning_hand_sequence_cards) :-
+    beats(double_sequence([card(8, clubs), card(8, diamonds), card(9, hearts), card(9, spades), card(10, spades), card(10, clubs)]),
+        double_sequence([card(5, spades), card(5, diamonds), card(6, hearts), card(6, clubs), card(7, spades), card(7, diamonds)])).
+
+test(double_sequence_beats_single_2) :-
+    beats(double_sequence([card(5, spades), card(5, diamonds), card(6, hearts), card(6, clubs), card(7, spades), card(7, diamonds)]), single(card(2, hearts))).
 
 initialize_game_predefined_full_players(GameState) :- 
     get_predefined_hands(P1, P2, P3, P4),
@@ -260,5 +359,12 @@ get_small_test_hand(Hand) :-
 
 get_small_numbered_hand(Hand) :-
     Hand = [card(2, diamonds),card(3,clubs), card(4, hearts), card(4, spades)].
+
+get_hands_test(FoundHands) :-
+    Hand = [card(j,spades), card(q,diamonds), card(k, hearts), card(a, clubs)],
+    sort_by_score(Hand, SortedHand), 
+    findall(FoundHand, find_tienlen_hands(SortedHand, FoundHand), FoundHands).
+    
+    
 
 :- end_tests(tienlen).
