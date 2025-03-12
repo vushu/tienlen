@@ -1,0 +1,26 @@
+name: SWI-Prolog CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Install SWI-Prolog
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y swi-prolog
+
+    - name: Run Tests
+      run: |
+        make test
