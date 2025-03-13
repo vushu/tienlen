@@ -362,6 +362,7 @@ possible_to_beat_with_hand(CurrentPlayerHand, sequence(Cards)) :-
     NumberCardsOfPlayer >= NumbersInPlay,
     get_all_possible_hands(CurrentPlayerHand, FoundHands),
     get_sequence_from_hand(FoundHands, ListOfSequences),
+    % we could optimize by only checking for sequences of the same length as Cards
     member(Hand, ListOfSequences), beats(Hand, sequence(Cards)), !.
 
 possible_to_beat_with_hand(CurrentPlayerHand, double_sequence(Cards)) :-
@@ -369,6 +370,7 @@ possible_to_beat_with_hand(CurrentPlayerHand, double_sequence(Cards)) :-
     NumberCardsOfPlayer >= NumbersInPlay,
     get_all_possible_hands(CurrentPlayerHand, FoundHands),
     get_double_sequence_from_hand(FoundHands, ListOfDoubleSequences),
+    % we could optimize by only checking for double sequences of the same length as Cards
     member(Hand, ListOfDoubleSequences), beats(Hand, double_sequence(Cards)), !.
 
 
@@ -577,6 +579,9 @@ test(possible_to_beat_with_hand_sequence) :-
     get_predefined_hands(P1, _, _, _),
     sort_by_score(P1, SortedHand),
     possible_to_beat_with_hand(SortedHand, sequence([card(q,diamonds),card(k,clubs),card(a,spades)])).
+
+test(possible_to_beat_with_hand_sequence) :-
+    possible_to_beat_with_hand([card(4, spades), card(5, spades), card(6, spades), card(7, spades), card(8, spades), card(9, clubs)], sequence([card(5,clubs),card(6,clubs),card(7,clubs), card(8, clubs)])).
 
 test(possible_to_beat_with_hand_double_sequence) :-
     get_double_sequence_predefined_hand(Hand),
