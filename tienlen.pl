@@ -1,6 +1,5 @@
 :- module(tienlen, [card_score/2, start_game/3, start_game/4, start_game/5, initialize_game_full_players/1, initialize_game_three_players/1, initialize_game_two_players/1]).
 :- use_module(cards).
-:- use_module(library(ordsets)).
 
 rank_value(3, 3). rank_value(4, 4). rank_value(5, 5).
 rank_value(6, 6). rank_value(7, 7). rank_value(8, 8).
@@ -61,6 +60,7 @@ player_with_lowest_card(Cards, R) :-
 % number_of_cards
 
 initialize_game_full_players(GameState) :- start_game(P1, P2, P3, P4, (PlayerIndex, Card)),
+                            % hands      scoreBoard  cardsInPlay  discardedCards  nextMove
     GameState = game_state([P1, P2, P3, P4], [], none, [], next_move(PlayerIndex, place(single(Card)))).
 
 initialize_game_three_players(GameState) :- start_game(P1, P2, P3, (PlayerIndex, Card)),
@@ -97,12 +97,12 @@ whos_next(NumberOfPlayers, PlayerIndex, NextPlayer) :-
 
 player_beats_cards_in_play(PlayerIndex, Hands, CardsInplay, PlacedCards, UpdatedHands) :-
     beats(PlacedCards, CardsInplay),
-    find_tienlen_hands(RawCards,[PlacedCards]), % Really smart this prolog, using the other direction soo cool to unwrap the cards :D
-    % writeln(RawCards),
+    tienlen_hand(RawCards,PlacedCards), % Really smart in prolog, that using the predicate the other direction will unwrap the cards, which is soo cool :D
     nth0(PlayerIndex, Hands, PlayerHand),
     remove_cards(RawCards, PlayerHand, NewPlayerHand),
     update_hands(PlayerIndex, Hands, NewPlayerHand, UpdatedHands).
 
+% Game logic
 interpret_tienlen(game_state(Hands, [], none, [], next_move(PlayerIndex, place(single(Cards)))), GameState) :-
     nth0(PlayerIndex, Hands, Hand),
     remove_cards([Cards], Hand, Rest),
@@ -153,9 +153,11 @@ next(q, k).
 next(k, a).
 % next(a, 2).
 
+highest_card(C, C, _) :- throw('Cannot compare card with itself').
+
 highest_card(C1, C2, R) :-
-    card_score(C1, CScore),
-    card_score(C2, C1Score), (CScore >= C1Score ->  R = C1; R = C2).
+    card_score(C1, C1Score),
+    card_score(C2, C2Score), (C1Score > C2Score ->  R = C1; R = C2).
 
 highest_card_in_list([H | T], Found) :-
     highest_card_in_list_(T, H, Found).
@@ -181,7 +183,7 @@ beats(three_of_kind(C1), three_of_kind(C2)) :-
 beats(four_of_kind(C1), four_of_kind(C2)) :-
     highest_card_in_list(C1, F1),
     highest_card_in_list(C2, F2),
-    highest_card(F1, F2, F1).
+    highest_card(F1, F2, F1),!.
 
 beats(sequence(C1), sequence(C2)) :-
     length(C1, L),
@@ -233,13 +235,13 @@ find_tienlen_hands([], []).
 find_tienlen_hands([card(R,S) | T], [single(card(R,S))| Rest]) :-
     find_tienlen_hands(T, Rest).
 
-find_tienlen_hands([card(R,S), card(R, S2) | T], [pair(card(R,S), card(R, S2))| Rest]) :-
+find_tienlen_hands([card(R,S), card(R, S2) | T], [pair([card(R,S), card(R, S2)])| Rest]) :-
     find_tienlen_hands(T, Rest).
  
-find_tienlen_hands([card(R,S), card(R, S2), card(R, S3) | T], [three_of_kind(card(R,S), card(R, S2), card(R, S3)) | Rest]) :-
+find_tienlen_hands([card(R,S), card(R, S2), card(R, S3) | T], [three_of_kind([card(R,S), card(R, S2), card(R, S3)]) | Rest]) :-
     find_tienlen_hands(T, Rest).
 
-find_tienlen_hands([card(R,S), card(R, S2), card(R, S3), card(R, S4) | T], [four_of_kind(card(R,S), card(R, S2), card(R, S3), card(R, S4)) | Rest]) :-
+find_tienlen_hands([card(R,S), card(R, S2), card(R, S3), card(R, S4) | T], [four_of_kind([card(R,S), card(R, S2), card(R, S3), card(R, S4)]) | Rest]) :-
     find_tienlen_hands(T, Rest).
 
 find_tienlen_hands([card(R1, S1), card(R2,S2), card(R3, S3) | T ], [sequence([card(R1, S1), card(R2, S2), card(R3, S3) | MoreSeq]) | Rest]) :-
@@ -248,12 +250,93 @@ find_tienlen_hands([card(R1, S1), card(R2,S2), card(R3, S3) | T ], [sequence([ca
     extended_sequence(R3, T, MoreSeq, Remaining),
     find_tienlen_hands(Remaining, Rest).
 
+% Double sequence
+find_tienlen_hands([card(R1, S1), card(R1, S2), card(R2, S3), card(R2, S4), card(R3, S5), card(R3, S6) | T], [double_sequence([card(R1, S1), card(R1, S2), card(R2, S3), card(R2, S4), card(R3, S5), card(R3, S6) | MoreSeq]) | Rest]) :-
+    next(R1, R2),
+    next(R2, R3),
+    extended_double_sequence(R3, T, MoreSeq, Remaining),
+    find_tienlen_hands(Remaining, Rest).
+
 extended_sequence(PreviousRank,[card(R1, S1) | T], [card(R1, S1) | MoreSequence], Remaining) :-
     next(PreviousRank, R1),
     extended_sequence(R1,T, MoreSequence, Remaining).
 
 extended_sequence(_,Remaining, [], Remaining).
 
+extended_double_sequence(PreviousRank,[card(R1, S1), card(R1, S2) | T], [card(R1, S1), card(R1, S2) | MoreSequence], Remaining) :-
+    next(PreviousRank, R1),
+    extended_double_sequence(R1,T, MoreSequence, Remaining).
+
+extended_double_sequence(_,Remaining, [], Remaining).
+
+get_pairs_from_hand(Cards, Result) :-
+    get_pairs_from_hand_(Cards, R), 
+    list_to_set(R, Result).
+
+get_pairs_from_hand_([], []).
+get_pairs_from_hand_([H | T], R) :-
+    F = pair(_),
+    findall(F, memberchk(F, H), Bag),
+    append(Bag, Rest, R),
+    get_pairs_from_hand_(T, Rest).
+
+get_third_of_kind_from_hand(Cards, Result) :-
+    get_third_of_kind_from_hand_(Cards, R), 
+    list_to_set(R, Result).
+
+get_third_of_kind_from_hand_([], []).
+get_third_of_kind_from_hand_([H | T], R) :-
+    F = three_of_kind(_),
+    findall(F, memberchk(F, H), Bag),
+    append(Bag, Rest, R),
+    get_third_of_kind_from_hand_(T, Rest).
+
+get_four_of_kind_from_hand(Cards, Result) :-
+    get_four_of_kind_from_hand_(Cards, R), 
+    list_to_set(R, Result).
+
+get_four_of_kind_from_hand_([], []).
+get_four_of_kind_from_hand_([H | T], R) :-
+    F = four_of_kind(_),
+    findall(F, memberchk(F, H), Bag),
+    append(Bag, Rest, R),
+    get_four_of_kind_from_hand_(T, Rest).
+
+get_sequence_from_hand(Cards, Result) :-
+    get_sequence_from_hand_(Cards, R), 
+    list_to_set(R, Result).
+
+get_sequence_from_hand_([], []).
+
+get_sequence_from_hand_([H | T], R) :-
+    F = sequence(_),
+    findall(F, memberchk(F, H), Bag),
+    append(Bag, Rest, R),
+    get_sequence_from_hand_(T, Rest).
+
+get_double_sequence_from_hand(Cards, Result) :-
+    writeln(Cards),
+    get_double_sequence_from_hand_(Cards, R), 
+    list_to_set(R, Result).
+
+get_double_sequence_from_hand_([], []).
+
+get_double_sequence_from_hand_([H | T], R) :-
+    F = double_sequence(_),
+    findall(F, memberchk(F, H), Bag),
+    append(Bag, Rest, R),
+    get_double_sequence_from_hand_(T, Rest).
+
+get_all_possible_hands(SortedHand, FoundHands) :-
+    findall(FoundHand, find_tienlen_hands(SortedHand, FoundHand), FoundHands).
+
+
+possible_to_beat_with_hand(CurrentPlayerHand, three_of_kind(Cards)) :-
+    length(Cards, NumbersInPlay), length(CurrentPlayerHand, NumberCardsOfPlayer),
+    NumberCardsOfPlayer >= NumbersInPlay,
+    get_all_possible_hands(CurrentPlayerHand, FoundHands),
+    get_third_of_kind_from_hand(FoundHands, ListOfThreeOfKind),
+    memberchk(Hand, ListOfThreeOfKind), beats(Hand, three_of_kind(Cards)), !.
 
 %--------------- UNIT TESTS -------------------
 :- use_module(library(plunit)).
@@ -319,7 +402,8 @@ test(sort_hand_by_score) :-
 test(find_tienlen_hands_four_of_kind) :-
     Hand = [card(2, spades),card(2, clubs), card(2, diamonds), card(2, hearts)],
     sort_by_score(Hand, SortedHand), 
-    findall(FoundHand,find_tienlen_hands(SortedHand, FoundHand), FoundHands), length(FoundHands, L),
+    get_all_possible_hands(SortedHand, FoundHands),
+    length(FoundHands, L),
     assertion(L = 8).
 
 test(get_possible_hands) :-
@@ -380,6 +464,46 @@ test(double_sequence_beats_three_of_kind_2) :-
         card(9, clubs), card(9, spades)]), 
     three_of_kind([card(2, hearts), card(2, spades), card(2, diamonds)])).
 
+test(does_hand_have_pair) :- 
+    get_predefined_hands(P1, _, _, _),
+    sort_by_score(P1, SortedHand),
+    get_all_possible_hands(SortedHand, FoundHands), 
+    Expected = [pair([card(7,spades),card(7,hearts)]),pair([card(5,diamonds),card(5,hearts)]),pair([card(5,spades),card(5,diamonds)]),pair([card(3,clubs),card(3,hearts)])],
+    get_pairs_from_hand(FoundHands, ListOfPairs), assertion(ListOfPairs = Expected).
+
+test(does_hand_have_three_of_kind) :-
+    get_predefined_hands(P1, _, _, _),
+    sort_by_score(P1, SortedHand),
+    get_all_possible_hands(SortedHand, FoundHands),
+    Expected = [three_of_kind([card(5,spades),card(5,diamonds),card(5,hearts)])],
+    get_third_of_kind_from_hand(FoundHands, ListOfThreeOfKind), assertion(ListOfThreeOfKind = Expected).
+
+test(does_hand_have_four_of_kind) :-
+    get_four_of_kind_predefined_hand(Hand),
+    sort_by_score(Hand, SortedHand),
+    get_all_possible_hands(SortedHand, FoundHands), 
+    Expected = [four_of_kind([card(2,spades),card(2,clubs),card(2,diamonds),card(2,hearts)])],
+    get_four_of_kind_from_hand(FoundHands, ListOfFourOfKind), assertion(ListOfFourOfKind = Expected).
+
+test(does_hand_have_sequence) :-
+    get_predefined_hands(P1, _, _, _),
+    sort_by_score(P1, SortedHand),
+    get_all_possible_hands(SortedHand, FoundHands),
+    Expected = [sequence([card(q,diamonds),card(k,clubs),card(a,clubs)])],
+    get_sequence_from_hand(FoundHands, ListOfSequences), assertion(ListOfSequences = Expected).
+
+test(does_hand_have_double_sequence) :-
+    get_double_sequence_predefined_hand(Hand),
+    sort_by_score(Hand, SortedHand),
+    get_all_possible_hands(SortedHand, FoundHands),
+    get_double_sequence_from_hand(FoundHands, ListOfDoubleSequences), length(ListOfDoubleSequences, L),
+    assertion(L = 3).
+
+test(possible_to_beat_with_hand, [fail]) :-
+    get_predefined_hands(P1, _, _, _),
+    sort_by_score(P1, SortedHand),
+    possible_to_beat_with_hand(SortedHand, three_of_kind([card(6,spades),card(6,diamonds),card(6,hearts)])).
+
 test(interpret_game_first_move) :-
     get_predefined_game(GameState),
     interpret_tienlen(GameState, NewGameState), get_next_move(NewGameState, next_move(0, make_move)).
@@ -414,6 +538,12 @@ get_predefined_hands(P1, P2, P3, P4) :-
     P3 = [card(k,spades),card(a,hearts),card(7,clubs),card(a,diamonds),card(j,hearts),card(8,spades),card(8,diamonds),card(j,clubs),card(5,clubs),card(q,spades),card(4,clubs),card(10,clubs),card(6,clubs)],
     P4 = [card(2,clubs),card(9,clubs),card(3,spades),card(3,diamonds),card(4,diamonds),card(7,diamonds),card(4,hearts),card(j,diamonds),card(10,spades),card(k,diamonds),card(6,hearts),card(8,hearts),card(10,hearts)].
 
+get_four_of_kind_predefined_hand(Hand) :-
+    Hand = [card(2,clubs),card(5,clubs),card(2,spades),card(2,diamonds),card(4,diamonds),card(7,diamonds),card(4,hearts),card(j,diamonds),card(10,spades),card(k,diamonds),card(6,hearts),card(8,hearts),card(2,hearts)].
+
+get_double_sequence_predefined_hand(Hand) :-
+    Hand = [card(9,clubs),card(9,spades),card(10,spades),card(10,clubs),card(j,clubs),card(j,spades),card(q,clubs),card(q,spades)].
+
 get_test_hand(Hand) :-
     Hand = [card(q,diamonds),card(5,diamonds),card(a,clubs),card(3,hearts),card(3,clubs),card(10,diamonds),card(2,diamonds),card(8,clubs),card(5,spades),card(7,spades),card(5,hearts),card(7,hearts),card(k,clubs)].
 
@@ -432,5 +562,4 @@ get_predefined_game(GameState) :-
     get_predefined_hands(P1, P2, P3, P4),
     GameState = game_state([P1, P2, P3, P4], [], none, [], next_move(3, place(single(card(3, spades))))).
     
-
 :- end_tests(tienlen).
