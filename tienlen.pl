@@ -94,6 +94,7 @@ get_score([ _ | T], NextScore):-
 get_place(1, first).
 get_place(2, second).
 get_place(3, third).
+get_place(4, third).
 
 set_player_states(Hands, PlayerStates, PlayerIndex, NewPlayerStates) :-
     nth0(PlayerIndex, Hands, []), 
@@ -103,6 +104,14 @@ set_player_states(Hands, PlayerStates, PlayerIndex, NewPlayerStates) :-
     
 set_player_states(Hands, PlayerStates, PlayerIndex, PlayerStates) :-
     nth0(PlayerIndex, Hands, _).
+
+set_looser_player_state(_,[], []).
+set_looser_player_state(LastPos,[in_play | T], [LastPlace | Rest]) :-
+    get_place(LastPos, LastPlace),
+    set_looser_player_state(LastPos,T, Rest), !.
+
+set_looser_player_state(LastPos,[H | T], [H | Rest]) :-
+    set_looser_player_state(LastPos,T, Rest).
     
 modify_list_at_index(EndIndex, Hands, Hand, UpdatedHands) :-
     modify_list_at_index_(EndIndex, 0, Hands, Hand, UpdatedHands).
@@ -201,12 +210,9 @@ interpret_tienlen(game_state(Hands, PlayerStates, CardsInplay, DiscardedCards, _
     player_beats_cards_in_play(PlayerIndex, Hands, CardsInplay, Cards, UpdatedHands),
     next_player(UpdatedHands, PlayerStates, PlayerIndex, NextPlayerIndex), NextPlayerIndex \= PlayerIndex,
     update_discarded_cards(DiscardedCards, CardsInplay, NewDiscardedCards),
-    make_move_or_pass(NextPlayerIndex, Hands, Cards, Action),
     set_player_states(UpdatedHands, PlayerStates, PlayerIndex, NewPlayerStates),
     writeln('Places card on top'),
-    (check_if_game_is_over(UpdatedHands) -> 
-        GameState = game_state(UpdatedHands, NewPlayerStates, Cards, NewDiscardedCards, PlayerIndex, next_move(NextPlayerIndex, game_over));
-        GameState = game_state(UpdatedHands, NewPlayerStates, Cards, NewDiscardedCards, PlayerIndex, next_move(NextPlayerIndex, Action))),!.
+    update_game_state(UpdatedHands, NewPlayerStates, Cards, NewDiscardedCards, PlayerIndex, NextPlayerIndex, GameState),!.
 
 % Next player is the same which means nobody can beat the new cards in play
 interpret_tienlen(game_state(Hands, PlayerStates, CardsInplay, DiscardedCards, _, next_move(PlayerIndex, place(Cards))), GameState) :-
@@ -217,11 +223,21 @@ interpret_tienlen(game_state(Hands, PlayerStates, CardsInplay, DiscardedCards, _
     set_player_states(UpdatedHands, PlayerStates, PlayerIndex, NewPlayerStates),
     writeln('Clearing card on top since '),
     (check_if_game_is_over(UpdatedHands) -> 
-        GameState = game_state(UpdatedHands, NewPlayerStates, Cards, MoreDiscardedCards, PlayerIndex, next_move(PlayerIndex, game_over));
+        make_game_over_game_state(UpdatedHands, NewPlayerStates, Cards, MoreDiscardedCards, PlayerIndex, PlayerIndex, GameState);
         writeln('Nobody can beat so player has the turn again'),
         reset_pass_to_in_play(NewPlayerStates,ResettedPlayerStates),
         GameState = game_state(UpdatedHands, ResettedPlayerStates, none, MoreDiscardedCards, PlayerIndex, next_move(PlayerIndex, make_move))),!.
 
+update_game_state(UpdatedHands, PlayerStates, Cards , DiscardedCards, PlayerIndex, NextPlayerIndex, NewGameState) :-
+    (check_if_game_is_over(UpdatedHands) -> 
+        make_game_over_game_state(UpdatedHands, PlayerStates, Cards, DiscardedCards, PlayerIndex, NextPlayerIndex, NewGameState);
+        make_move_or_pass(NextPlayerIndex, UpdatedHands, Cards, Action),
+        NewGameState = game_state(UpdatedHands, PlayerStates, Cards, DiscardedCards, PlayerIndex, next_move(NextPlayerIndex, Action))),!.
+
+make_game_over_game_state(UpdatedHands, PlayerStates, Cards, DiscardedCards, PlayerIndex, NextPlayerIndex, NewGameState) :-
+    length(PlayerStates, L),
+    set_looser_player_state(L, PlayerStates, LooserPlayerState),
+    NewGameState = game_state(UpdatedHands, LooserPlayerState, Cards, DiscardedCards, PlayerIndex, next_move(NextPlayerIndex, game_over)).
 
 
 tienlen_hand([C], single(C)). % any single card is OK if no cards in play.
@@ -788,7 +804,7 @@ GS = game_state([
                                                                                                           % Clears here
     interpret_tienlen(PlaceGS2, GS3), assertion(GS3 = game_state([[card(4,diamonds)],[card(3,hearts)],[]],[in_play,in_play, first],none,[single(card(3,spades)),single(card(4,spades)),single(card(4,hearts)),single(card(5,clubs)),single(card(5,diamonds)),single(card(7,spades))],0,next_move(0,make_move))),
     simulate_placing_cards(single(card(4, diamonds)), GS3, PlaceGS3),
-    interpret_tienlen(PlaceGS3, FinalGS), assertion(FinalGS = game_state([[],[card(3,hearts)],[]],[second,in_play,first],single(card(4,diamonds)),[single(card(3,spades)),single(card(4,spades)),single(card(4,hearts)),single(card(5,clubs)),single(card(5,diamonds)),single(card(7,spades))],0,next_move(1,game_over))).
+    interpret_tienlen(PlaceGS3, FinalGS), assertion(FinalGS = game_state([[],[card(3,hearts)],[]],[second,third,first],single(card(4,diamonds)),[single(card(3,spades)),single(card(4,spades)),single(card(4,hearts)),single(card(5,clubs)),single(card(5,diamonds)),single(card(7,spades))],0,next_move(1,game_over))).
 
 test(reset_pass_to_in_play) :-
     reset_pass_to_in_play([pass, pass, first], [in_play, in_play, first]).
