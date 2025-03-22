@@ -42,7 +42,6 @@ start_game(P1, P2, P3, P4, PlayerStart) :-
     append_multiple([P1, P2, P3, P4], Cards),
     player_with_lowest_card(Cards, PlayerStart).
 
-
 append_multiple([], []).
 append_multiple([H, H2 | T], R3) :-
     append(H, H2, R), append_multiple(T, R2), append(R, R2, R3).
