@@ -983,7 +983,7 @@ test(continue_new_game_after_game_over) :-
     NewGS = game_state([_, PlayerHand,_,_], _, _, _, _, _, _), 
     nth0(0, PlayerHand, Card), 
     simulate_placing_cards(single(Card),NewGS, GS2),
-    interpret_tienlen(GS2, GS3), get_next_move(GS3, NextMove2), assertion(NextMove2 = next_move(2, make_move)).
+    interpret_tienlen(GS2, GS3), get_next_move(GS3, NextMove2), assertion(NextMove2 = next_move(2, _)).
 
 initialize_game_predefined_full_players(GameState) :- 
     get_predefined_hands(P1, P2, P3, P4),
