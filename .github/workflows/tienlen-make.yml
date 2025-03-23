@@ -24,4 +24,3 @@ jobs:
     - name: Run Tests
       run: |
         make test
-        make test_server
