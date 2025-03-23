@@ -19,9 +19,8 @@ handle_ws(WebSocket) :-
     format('Received: ~w~n', [Message.data]),  % Print received message
     
     % term_string(Term, Message.data),
-    init_game_state_as_json(GameStateJson),
+    init_full_player_game(GameStateJson),
     ws_send(WebSocket, json(GameStateJson)), % Send confirmation
-    % writeln(JSONObject),
     
 
     
@@ -64,9 +63,10 @@ initialize_game(GameState) :- initialize_game_full_players(GameState).
 :- json_object
     game_state(hands: list, player_states: list, cards_in_play: any, discarded_cards: list, attacker: any, scoreboard: list, next_move: any).
 
-% initialize_game(GameState),
 
-init_game_state_as_json(GameStateJson) :- initialize_game(GameState), prolog_to_json(GameState, GameStateJson).
+init_full_player_game(GameStateJson) :- initialize_game_full_players(GS), prolog_to_json(GS, GameStateJson).
+init_three_player_game(GameStateJson) :- initialize_game_three_players(GS), prolog_to_json(GS, GameStateJson).
+init_two_player_game(GameStateJson) :- initialize_game_two_players(GS), prolog_to_json(GS, GameStateJson).
 
                             % hands      scoreBoard  cardsInPlay  discardedCards, attackerindex, scoreboard nextMove
 say_hi(Message) :- 
@@ -76,6 +76,9 @@ say_hi(Message) :-
 :- use_module(library(plunit)).
 
 :- begin_tests(tienlen_server).
+
+% test(test_initialize_game) :- 
+    % init_game_state_as_json(GS), assertion(GS = json([hands=[[json([rank=6,suit=clubs]),json([rank=9,suit=hearts]),json([rank=5,suit=spades]),json([rank=2,suit=clubs]),json([rank=j,suit=hearts]),json([rank=10,suit=diamonds]),json([rank=5,suit=hearts]),json([rank=5,suit=diamonds]),json([rank=8,suit=spades]),json([rank=7,suit=clubs]),json([rank=5,suit=clubs]),json([rank=2,suit=diamonds]),json([rank=k,suit=hearts])],[json([rank=9,suit=clubs]),json([rank=3,suit=diamonds]),json([rank=j,suit=diamonds]),json([rank=8,suit=clubs]),json([rank=6,suit=diamonds]),json([rank=3,suit=spades]),json([rank=6,suit=spades]),json([rank=10,suit=spades]),json([rank=8,suit=diamonds]),json([rank=a,suit=diamonds]),json([rank=9,suit=diamonds]),json([rank=j,suit=spades]),json([rank=8,suit=hearts])],[json([rank=10,suit=hearts]),json([rank=j,suit=clubs]),json([rank=9,suit=spades]),json([rank=a,suit=clubs]),json([rank=k,suit=clubs]),json([rank=4,suit=spades]),json([rank=a,suit=spades]),json([rank=q,suit=spades]),json([rank=3,suit=hearts]),json([rank=2,suit=hearts]),json([rank=a,suit=hearts]),json([rank=q,suit=hearts]),json([rank=2,suit=spades])],[json([rank=3,suit=clubs]),json([rank=k,suit=spades]),json([rank=q,suit=diamonds]),json([rank=7,suit=hearts]),json([rank=k,suit=diamonds]),json([rank=10,suit=clubs]),json([rank=7,suit=spades]),json([rank=4,suit=hearts]),json([rank=q,suit=clubs]),json([rank=6,suit=hearts]),json([rank=7,suit=diamonds]),json([rank=4,suit=diamonds]),json([rank=4,suit=clubs])]],player_states=[in_play,in_play,in_play,in_play],cards_in_play=none,discarded_cards=[],attacker=none,scoreboard=[],next_move=json([player=1,action=json([place=json([single=json([rank=3,suit=spades])])])])])).
 
 test(placing_sequence_json) :-
     GS = game_state([
@@ -88,6 +91,5 @@ test(placing_sequence_json) :-
         three_of_kind([card(5,spades),card(5,diamonds),card(5,hearts)]),three_of_kind([card(9,spades),card(9,diamonds),card(9,hearts)]),pair([card(6,spades),card(6,diamonds)]),pair([card(8,spades),card(8,diamonds)]),pair([card(2,spades),card(2,hearts)])],1,[],next_move(2,place(sequence([card(j,hearts),card(q,spades),card(k,spades),card(a,diamonds)])))),
         prolog_to_json(GS, GSJSON), 
         assertion(GSJSON = json([hands=[[json([rank=3,suit=clubs]),json([rank=7,suit=spades]),json([rank=7,suit=hearts]),json([rank=8,suit=clubs]),json([rank=q,suit=diamonds]),json([rank=k,suit=clubs]),json([rank=a,suit=clubs])],[],[json([rank=5,suit=clubs]),json([rank=6,suit=clubs]),json([rank=7,suit=clubs]),json([rank=10,suit=clubs]),json([rank=j,suit=clubs]),json([rank=j,suit=hearts]),json([rank=q,suit=spades]),json([rank=k,suit=spades]),json([rank=a,suit=diamonds]),json([rank=a,suit=hearts])],[json([rank=3,suit=diamonds]),json([rank=4,suit=diamonds]),json([rank=4,suit=hearts]),json([rank=6,suit=hearts]),json([rank=7,suit=diamonds]),json([rank=8,suit=hearts]),json([rank=9,suit=clubs]),json([rank=10,suit=hearts]),json([rank=j,suit=diamonds]),json([rank=k,suit=diamonds])]],player_states=[in_play,first,in_play,in_play],cards_in_play=json([sequence=[json([rank=j,suit=spades]),json([rank=q,suit=hearts]),json([rank=k,suit=hearts]),json([rank=a,suit=spades])]]),discarded_cards=[json([single=json([rank=3,suit=spades])]),json([single=json([rank=3,suit=hearts])]),json([single=json([rank=4,suit=spades])]),json([single=json([rank=4,suit=clubs])]),json([single=json([rank=10,suit=spades])]),json([single=json([rank=10,suit=diamonds])]),json([single=json([rank=q,suit=clubs])]),json([single=json([rank=2,suit=clubs])]),json([single=json([rank=2,suit=diamonds])]),json([three_of_kind=[json([rank=5,suit=spades]),json([rank=5,suit=diamonds]),json([rank=5,suit=hearts])]]),json([three_of_kind=[json([rank=9,suit=spades]),json([rank=9,suit=diamonds]),json([rank=9,suit=hearts])]]),json([pair=[json([rank=6,suit=spades]),json([rank=6,suit=diamonds])]]),json([pair=[json([rank=8,suit=spades]),json([rank=8,suit=diamonds])]]),json([pair=[json([rank=2,suit=spades]),json([rank=2,suit=hearts])]])],attacker=1,scoreboard=[],next_move=json([player=2,action=json([place=json([sequence=[json([rank=j,suit=hearts]),json([rank=q,suit=spades]),json([rank=k,suit=spades]),json([rank=a,suit=diamonds])]])])])])).
-
 
 :- end_tests(tienlen_server).
