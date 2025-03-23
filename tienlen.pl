@@ -1,4 +1,4 @@
-:- module(tienlen, [card_score/2, start_game/3, start_game/4, start_game/5, initialize_game_full_players/1, initialize_game_three_players/1, initialize_game_two_players/1]).
+:- module(tienlen, [card_score/2, start_game/3, start_game/4, start_game/5, initialize_game_full_players/1, initialize_game_three_players/1, initialize_game_two_players/1, interpret_tienlen/2]).
 :- use_module(cards).
 
 rank_value(3, 3). rank_value(4, 4). rank_value(5, 5).

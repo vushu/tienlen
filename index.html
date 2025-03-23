@@ -3,10 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebSocket Client</title>
-    <script src="client.js" defer></script>
+    <title>Card Unicode Visualization</title>
+    <style>
+        .hand {
+            margin-bottom: 20px;
+        }
+        .card {
+            font-size: 10em;
+            margin-right: 5px;
+            cursor: pointer;
+        }
+        .card.red {
+            color: red;
+        }
+        .card.selected {
+            border: 2px solid blue;
+        }
+    </style>
 </head>
 <body>
-    <h1>TienLen Client</h1>
+    <h2>Cards in Play</h2>
+    <div id="cards-in-play-container"></div>
+    <h1 id="player-turn">Player Turn: </h1>
+    <h3 id="player-action">Action: </h3>
+    <button onclick="sendDataBack()">Send Data Back</button>
+    <h1>Card Unicode Visualization</h1>
+    <div id="hands-container"></div>
+    <script src="client.js"></script>
 </body>
 </html>

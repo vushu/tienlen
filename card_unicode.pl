@@ -7,10 +7,10 @@ card_as_unicode((7, hearts), '🂷').
 card_as_unicode((8, hearts), '🂸').
 card_as_unicode((9, hearts), '🂹').
 card_as_unicode((10, hearts), '🂺').
-card_as_unicode((jack, hearts), '🂻').
-card_as_unicode((queen, hearts), '🂽').
-card_as_unicode((king, hearts), '🂾').
-card_as_unicode((ace, hearts), '🂱').
+card_as_unicode((j, hearts), '🂻').
+card_as_unicode((q, hearts), '🂽').
+card_as_unicode((k, hearts), '🂾').
+card_as_unicode((a, hearts), '🂱').
 
 card_as_unicode((2, diamonds), '🃂').
 card_as_unicode((3, diamonds), '🃃').
@@ -21,10 +21,10 @@ card_as_unicode((7, diamonds), '🃇').
 card_as_unicode((8, diamonds), '🃈').
 card_as_unicode((9, diamonds), '🃉').
 card_as_unicode((10, diamonds), '🃊').
-card_as_unicode((jack, diamonds), '🃋').
-card_as_unicode((queen, diamonds), '🃍').
-card_as_unicode((king, diamonds), '🃎').
-card_as_unicode((ace, diamonds), '🃁').
+card_as_unicode((j, diamonds), '🃋').
+card_as_unicode((q, diamonds), '🃍').
+card_as_unicode((k, diamonds), '🃎').
+card_as_unicode((a, diamonds), '🃁').
 
 card_as_unicode((2, clubs), '🃒').
 card_as_unicode((3, clubs), '🃓').
@@ -35,10 +35,10 @@ card_as_unicode((7, clubs), '🃗').
 card_as_unicode((8, clubs), '🃘').
 card_as_unicode((9, clubs), '🃙').
 card_as_unicode((10, clubs), '🃚').
-card_as_unicode((jack, clubs), '🃛').
-card_as_unicode((queen, clubs), '🃝').
-card_as_unicode((king, clubs), '🃞').
-card_as_unicode((ace, clubs), '🃑').
+card_as_unicode((j, clubs), '🃛').
+card_as_unicode((q, clubs), '🃝').
+card_as_unicode((k, clubs), '🃞').
+card_as_unicode((a, clubs), '🃑').
 
 card_as_unicode((2, spades), '🂢').
 card_as_unicode((3, spades), '🂣').
@@ -49,7 +49,7 @@ card_as_unicode((7, spades), '🂧').
 card_as_unicode((8, spades), '🂨').
 card_as_unicode((9, spades), '🂩').
 card_as_unicode((10, spades), '🂪').
-card_as_unicode((jack, spades), '🂫').
-card_as_unicode((queen, spades), '🂭').
-card_as_unicode((king, spades), '🂮').
-card_as_unicode((ace, spades), '🂡').
+card_as_unicode((j, spades), '🂫').
+card_as_unicode((q, spades), '🂭').
+card_as_unicode((k, spades), '🂮').
+card_as_unicode((a, spades), '🂡').
