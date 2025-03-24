@@ -1,34 +1,58 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Card Unicode Visualization</title>
+    <title>TienLen</title>
     <style>
         .hand {
             margin-bottom: 20px;
         }
+
         .card {
             font-size: 10em;
             margin-right: 5px;
             cursor: pointer;
         }
+
         .card.red {
             color: red;
         }
+
         .card.selected {
             border: 2px solid blue;
         }
+
+        .sticky {
+            position: sticky;
+            top: 0;
+        }
+
+        .card-container {
+            display: flex;
+            flex-wrap: wrap;
+            background: white;
+        }
     </style>
 </head>
+
 <body>
-    <h2>Cards in Play</h2>
-    <div id="cards-in-play-container"></div>
-    <h1 id="player-turn">Player Turn: </h1>
-    <h3 id="player-action">Action: </h3>
-    <button onclick="sendDataBack()">Send Data Back</button>
-    <h1>Card Unicode Visualization</h1>
+    <h1>TienLen</h1>
+    <div class="sticky card-container">
+        <div id="cards-in-play-container"></div>
+        <div>
+            <button onclick="sendNewGame()">New Game</button>
+            <button onclick="sendLastGame()">Last Game</button>
+            <h1 id="player-turn">Player Turn: </h1>
+            <h3 id="player-action">Action: </h3>
+            <button onclick="sendDataBack()">Send Data Back</button>
+            <button onclick="sendPass()">Pass</button>
+        </div>
+    </div>
+    </div>
     <div id="hands-container"></div>
     <script src="client.js"></script>
 </body>
+
 </html>

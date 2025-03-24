@@ -27,8 +27,9 @@ handle_ws(WebSocket) :-
 
 process_message(Message, Response) :-
     ( Message == "init_game" ->
-        init_full_player_game(Response)
-    ; % Default response for unknown message types
+        init_full_player_game(Response);
+        writeln('LAST  GAME'),
+        Message == "last_game", last_game_state(GS), prolog_to_json(GS, Response); 
         writeln('Json back to prolog'),
         atom_json_term(Message, JSONTerm, []), 
         json_to_prolog(JSONTerm, PrologTerm),
@@ -55,19 +56,19 @@ initialize_game(GameState) :- initialize_game_full_players(GameState).
     single(card: any) + [type=single].
 
 :- json_object
-    pair(pair: list) + [type=pair].
+    pair(cards: list) + [type=pair].
 
 :- json_object
-    sequence(sequence: list).
+    sequence(cards: list) + [type=sequence].
 
 :- json_object
-    three_of_kind(three_of_kind: list).
+    three_of_kind(cards: list) + [type=three_of_kind].
 
 :- json_object
-    four_of_kind(four_of_kind: list).
+    four_of_kind(cards: list) + [type=four_of_kind].
 
 :- json_object
-    double_sequence(double_sequence: list).
+    double_sequence(cards: list) + [type=double_sequence].
 
 % hands      playerstates  cardsInPlay  discardedCards, attackerindex, scoreboard nextMove
 :- json_object
@@ -79,6 +80,8 @@ init_three_player_game(GameStateJson) :- initialize_game_three_players(GS), prol
 init_two_player_game(GameStateJson) :- initialize_game_two_players(GS), prolog_to_json(GS, GameStateJson).
 
                             % hands      scoreBoard  cardsInPlay  discardedCards, attackerindex, scoreboard nextMove
+last_game_state(GS) :-
+    GS = game_state([[card(5,spades),card(6,spades),card(6,hearts),card(j,hearts),card(q,clubs),card(q,diamonds),card(q,hearts),card(k,clubs),card(a,hearts)],[card(3,diamonds),card(3,hearts),card(4,clubs),card(4,diamonds),card(7,hearts),card(8,diamonds),card(j,clubs),card(j,diamonds),card(k,diamonds),card(a,spades),card(a,diamonds)],[card(5,clubs),card(6,clubs),card(6,diamonds),card(7,clubs),card(8,clubs),card(8,hearts),card(9,clubs),card(9,hearts),card(10,spades),card(10,diamonds),card(j,spades),card(k,spades)],[card(4,spades),card(5,diamonds),card(7,spades),card(7,diamonds),card(8,spades),card(9,diamonds),card(10,hearts),card(q,spades),card(k,hearts),card(a,clubs),card(2,spades),card(2,clubs)]],[in_play,pass,in_play,in_play],single(card(2,diamonds)),[single(card(3,spades)),single(card(3,clubs)),single(card(4,hearts)),single(card(5,hearts)),single(card(9,spades)),single(card(10,clubs)),single(card(2,hearts))],0,[],next_move(2,make_move)).
 say_hi(Message) :- 
     writeln('Connected To TienLen Server'),
     writeln(Message).

@@ -29,7 +29,9 @@ find_lowest_scored_card([Card1, Card2 | Rest], LowestCard) :-
 
 start_game(P1, P2, PlayerStart) :- 
     deal_cards_to_players(P1, P2, _ , _),
-    append_multiple([P1, P2], Cards),
+    sort_by_score(P1, SortedP1),
+    sort_by_score(P2, SortedP2),
+    append_multiple([SortedP1, SortedP2], Cards),
     player_with_lowest_card(Cards, PlayerStart).
 
 start_game(P1, P2, P3, PlayerStart) :- 
@@ -37,9 +39,13 @@ start_game(P1, P2, P3, PlayerStart) :-
     append_multiple([P1, P2, P3], Cards),
     player_with_lowest_card(Cards, PlayerStart).
 
-start_game(P1, P2, P3, P4, PlayerStart) :- 
+start_game(SortedP1, SortedP2, SortedP3, SortedP4, PlayerStart) :- 
     deal_cards_to_players(P1, P2, P3 , P4),
-    append_multiple([P1, P2, P3, P4], Cards),
+    sort_by_score(P1, SortedP1),
+    sort_by_score(P2, SortedP2),
+    sort_by_score(P3, SortedP3),
+    sort_by_score(P4, SortedP4),
+    append_multiple([SortedP1, SortedP2, SortedP3, SortedP4], Cards),
     player_with_lowest_card(Cards, PlayerStart).
 
 append_multiple([], []).
@@ -187,6 +193,20 @@ reset_pass_to_in_play([pass | T], [in_play | Rest]) :-
 reset_pass_to_in_play([H | T], [H | Rest]) :-
     reset_pass_to_in_play(T, Rest).
 % Game logic
+
+interpret_tienlen(game_state(Hands, PlayerStates, CardsInplay, DiscardedCards, AttackerIndex, Scoreboard, next_move(PlayerIndex, make_move)), GameState) :-
+    writeln('PLEASE MAKE A MOVE!'),
+    GameState = game_state(Hands, PlayerStates, CardsInplay, DiscardedCards, AttackerIndex, Scoreboard, next_move(PlayerIndex, make_move)), !.
+
+interpret_tienlen(game_state(Hands, PlayerStates, none, [], AttackerIndex, [], next_move(PlayerIndex, pass)), GameState) :-
+    writeln("PLEASE MAKE A MOVE you can't pass if there are no cards in play!"),
+    nth0(PlayerIndex, Hands, Hand),
+    writeln("PLACE the LOWEST card in your hand"), find_lowest_scored_card(Hand, LowestCard),
+    GameState = game_state(Hands, PlayerStates, none, [], AttackerIndex, [], next_move(PlayerIndex, place(single(LowestCard)))), !.
+
+interpret_tienlen(game_state(Hands, PlayerStates, none, DiscardedCards, AttackerIndex, Scoreboard, next_move(PlayerIndex, pass)), GameState) :-
+    writeln("PLEASE MAKE A MOVE you can't pass if there are no cards in play!"),
+    GameState = game_state(Hands, PlayerStates, none, DiscardedCards, AttackerIndex, Scoreboard, next_move(PlayerIndex, make_move)), !.
 
 interpret_tienlen(game_state(Hands, _, _, _, _, Scoreboard, next_move(PlayerIndex, game_over)), GameState) :-
     length(Hands, 2),initialize_game_two_players(GS), GS = game_state(NewHands, PlayerStates, CardsInplay, DiscardedCards, AttackerIndex, _, _),
@@ -375,7 +395,7 @@ beats(double_sequence(N), pair([card(2, _), card(2,_)])) :-
 beats(double_sequence(N), three_of_kind([card(2, _), card(2,_), card(2, _)])) :-
     length(N, 10), !.
 
-beats(C1, C2) :- format("Invalid move! You can't put ~w on top of ~w~n", [C1, C2]), fail.
+% beats(C1, C2) :- format("Invalid move! You can't put ~w on top of ~w~n", [C1, C2]),!, fail.
 
 next_rank_is_greater(_,[]).
 next_rank_is_greater(PreviousRank, [card(R, _) | Rest]) :-
@@ -528,6 +548,7 @@ possible_to_beat_with_hand(CurrentPlayerHand, sequence(Cards)) :-
     NumberCardsOfPlayer >= NumbersInPlay,
     get_all_possible_hands(CurrentPlayerHand, FoundHands),
     get_sequence_from_hand(FoundHands, ListOfSequences),
+    writeln('Checking sequence possible to beat.'),
     % we could optimize by only checking for sequences of the same length as Cards
     member(Hand, ListOfSequences), beats(Hand, sequence(Cards)), !.
 
@@ -983,6 +1004,19 @@ test(continue_new_game_after_game_over) :-
     nth0(0, PlayerHand, Card), 
     simulate_placing_cards(single(Card),NewGS, GS2),
     interpret_tienlen(GS2, GS3), get_next_move(GS3, NextMove2), assertion(NextMove2 = next_move(2, _)).
+
+% test(tienlen_game_sequence_should_not_pass_unsorted_hands) :-
+%     GS = game_state([[card(9,clubs),card(6,clubs),card(10,diamonds),card(5,diamonds),card(q,spades),card(j,diamonds),card(3,diamonds),card(k,clubs),card(3,clubs),card(6,hearts),card(j,clubs),card(5,spades)],[card(a,hearts),card(3,hearts),card(4,spades),card(8,spades),card(6,diamonds),card(k,hearts),card(4,diamonds),card(7,clubs),card(k,diamonds),card(q,clubs),card(4,clubs),card(9,hearts),card(10,hearts)],[card(7,hearts),card(10,spades),card(2,clubs),card(10,clubs),card(4,hearts)],[card(5,hearts),card(5,clubs),card(q,diamonds),card(a,diamonds),card(2,hearts),card(9,diamonds),card(9,spades),card(7,diamonds),card(8,hearts),card(2,spades),card(8,diamonds),card(j,hearts),card(a,clubs)]],[in_play,in_play,in_play,in_play],sequence([card(6,spades),card(7,spades),card(8,clubs)]),[single(card(3,spades)),single(card(2,diamonds)),sequence([card(j,spades),card(q,hearts),card(k,spades),card(a,spades)])],2,[],next_move(3,pass)),
+%     interpret_tienlen(GS, NewGS), get_next_move(NewGS, NextMove), assertion(NextMove = next_move(0, make_move)).
+
+test(sequence_beats_sequence) :-
+    GS = game_state([[card(j,clubs),card(j,diamonds)],[card(5,hearts),card(8,diamonds),card(q,hearts),card(k,hearts)],[card(6,diamonds),card(8,hearts),card(10,clubs),card(k,clubs)],[card(3,diamonds),card(5,clubs),card(6,hearts),card(7,spades),card(8,clubs),card(9,hearts),card(10,spades),card(j,spades),card(q,diamonds),card(a,clubs)]],[in_play,in_play,in_play,in_play],sequence([card(3,clubs),card(4,clubs),card(5,spades),card(6,clubs),card(7,clubs),card(8,spades)]),[single(card(3,spades)),single(card(2,clubs)),single(card(2,hearts)),sequence([card(10,diamonds),card(j,hearts),card(q,spades),card(k,spades)]),single(card(3,hearts)),single(card(7,diamonds)),single(card(7,hearts)),single(card(q,clubs)),single(card(a,spades)),single(card(a,diamonds)),single(card(2,diamonds)),three_of_kind([card(4,spades),card(4,diamonds),card(4,hearts)]),three_of_kind([card(9,spades),card(9,clubs),card(9,diamonds)]),single(card(6,spades)),single(card(10,hearts)),single(card(2,spades)),single(card(5,diamonds)),single(card(k,diamonds)),single(card(a,hearts))],1,[],next_move(2,pass)),
+    interpret_tienlen(GS, NewGS), get_next_move(NewGS, NextMove), assertion(NextMove = next_move(3, make_move)),
+    simulate_placing_cards(sequence([card(5,clubs),card(6,hearts),card(7,spades),card(8,clubs),card(9,hearts),card(10,spades)]), NewGS, GS2),
+    interpret_tienlen(GS2, GS3), get_next_move(GS3, NextMove2), assertion(NextMove2 = next_move(0, pass)).
+
+% test(sequence_beats_sequence2) :-
+    % GS = game_state([[card(3,clubs),card(4,clubs),card(5,spades),card(6,clubs),card(9,hearts),card(10,clubs),card(j,clubs),card(a,spades),card(a,diamonds),card(2,spades),card(2,diamonds),card(2,hearts)],[card(5,clubs),card(5,diamonds),card(6,spades),card(6,diamonds),card(7,diamonds),card(8,spades),card(8,hearts),card(9,spades),card(10,diamonds),card(k,spades),card(k,clubs),card(a,hearts),card(2,clubs)],[card(3,diamonds),card(4,hearts),card(6,hearts),card(7,hearts),card(8,clubs),card(8,diamonds),card(10,hearts),card(j,spades),card(j,diamonds),card(q,spades),card(q,clubs),card(q,hearts),card(k,hearts)],[card(3,hearts),card(4,spades),card(4,diamonds),card(5,hearts),card(7,spades),card(7,clubs),card(9,clubs),card(9,diamonds),card(10,spades),card(j,hearts),card(q,diamonds),card(k,diamonds),card(a,clubs)]],[in_play,in_play,in_play,in_play],none,[single(card(3,spades))],0,[],next_move(0,make_move)),
 
 initialize_game_predefined_full_players(GameState) :- 
     get_predefined_hands(P1, P2, P3, P4),
