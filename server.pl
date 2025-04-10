@@ -6,39 +6,96 @@
 :- use_module(library(record)).
 
 :- initialization(start, main).
+:- dynamic client/1.
+:- dynamic room/2.
 
 % Define WebSocket handler
-:- http_handler(root(.), http_upgrade_to_websocket(handle_ws, []), [spawn([])]).
+:- http_handler(root(.), http_upgrade_to_websocket(handle_ws(run), []), [spawn([])]).
 
 % Start the WebSocket server on port 8000
 start :- http_server([port(8080)]).
 
-
 % Handle incoming WebSocket messages
-handle_ws(WebSocket) :-
-    ws_receive(WebSocket, Message),
 
-    process_message(Message.data, Response),
 
-    ws_send(WebSocket, json(Response)), % Send response
+% Stop the WebSocket connection
+handle_ws(stop, WebSocket) :- retract(client(WebSocket)), writeln('Stopping connection'), get_number_of_clients(L), format('Number of clients ~w~n', [L]).
+
+handle_ws(run, WebSocket) :-
+    add_client(WebSocket), 
+    ws_receive(WebSocket, Msg),
+    handle_opcode(WebSocket, Msg, State),
+    handle_ws(State, WebSocket).
+
+handle_opcode(WebSocket, Msg, State) :-
+    Msg.opcode == close -> State = stop; State = run.
+
+% Skipping
+% handle_opcode(_) :- writeln('asdfasdf').
+
+
+get_clients(Clients) :- findall(Client, client(Client), Clients).
+
+add_new_client(WebSocket, Clients, Clients) :-
+    member(WebSocket, Clients),
+    writeln('Already in room'), !.
+
+add_new_client(WebSocket, Clients, NewClients) :- 
+    (length(Clients, L), L < 4 -> 
+        append(Clients, [WebSocket], NewClients);
+        writeln('Room full'), 
+        length(Clients, Len), writeln(Len), 
+        NewClients = Clients).
+
+add_client(WebSocket) :-
+    client(WebSocket), writeln('Client already exists').
+
+add_client(WebSocket) :-
+    assertz(client(WebSocket)), get_number_of_clients(N), format('Adding new client, number of clients ~w~n', [N]).
+
+get_number_of_clients(N) :- get_clients(Clients), length(Clients, N).
+
+
+% handle_message(WebSocket) :-
+%     ws_receive(WebSocket, Message),
+%     % process_message(Message.data, Response),
+%     ws_send(WebSocket, json(Response)).
+
+start_game(Clients) :- 
+    length(Clients, L), 
+    L >= 4, initialize_game_full_players(GS),
+    extract_player_index(GS, Index), prolog_to_json(GS, JSON), nth0(Index, Clients, WS), ws_send(WS, json(JSON)) .
+
+start_game(Clients) :- 
+    length(Clients, L), 
+    L < 4, writeln('Not enough players'), 
+    length(Clients, Len), writeln(Len).
+
+% handle_ws(Clients, WebSocket) :-
+%     ws_receive(WebSocket, Message),
+
+%     process_message(Message.data, Response),
+
+%     ws_send(WebSocket, json(Response)), % Send response
     
-    handle_ws(WebSocket).  % Keep listening for new messages
+%     handle_ws(Clients, WebSocket).  % Keep listening for new messages
 
 
-process_message(Message, Response) :-
-    ( Message == "init_game" ->
-        init_full_player_game(Response);
-        writeln('LAST  GAME'),
-        Message == "last_game", last_game_state(GS), prolog_to_json(GS, Response); 
-        writeln('Json back to prolog'),
-        atom_json_term(Message, JSONTerm, []), 
-        json_to_prolog(JSONTerm, PrologTerm),
-        interpret_tienlen(PrologTerm, GameState), prolog_to_json(GameState, JSONGameState),
-        writeln('prolog term'), writeln(GameState),
+% process_message(Message, Response) :-
+%     ( Message == "init_game" ->
+%         init_full_player_game(Response);
+%         writeln('LAST  GAME'),
+%         Message == "last_game", last_game_state(GS), prolog_to_json(GS, Response); 
+%         % writeln('Json back to prolog'),
+%         writeln('ELSE'),
+%         atom_json_term(Message, JSONTerm, []), 
+%         json_to_prolog(JSONTerm, PrologTerm),
+%         interpret_tienlen(PrologTerm, GameState), prolog_to_json(GameState, JSONGameState),
+        % writeln('prolog term'), writeln(GameState),
 
 
-        Response = JSONGameState
-    ).
+        % Response = JSONGameState
+    % ).
 
 
 initialize_game(GameState) :- initialize_game_full_players(GameState).
@@ -75,9 +132,11 @@ initialize_game(GameState) :- initialize_game_full_players(GameState).
     game_state(hands: list, player_states: list, cards_in_play: any, discarded_cards: list, attacker: any, scoreboard: list, next_move: any).
 
 
-init_full_player_game(GameStateJson) :- initialize_game_full_players(GS), prolog_to_json(GS, GameStateJson).
-init_three_player_game(GameStateJson) :- initialize_game_three_players(GS), prolog_to_json(GS, GameStateJson).
-init_two_player_game(GameStateJson) :- initialize_game_two_players(GS), prolog_to_json(GS, GameStateJson).
+extract_player_index(game_state(_, _, _, _, _, _, next_move(PlayerIndex, _)), PlayerIndex).
+
+% init_full_player_game(Start,GameStateJson) :- initialize_game_full_players(GS), prolog_to_json(GS, GameStateJson).
+% init_three_player_game(Start, GameStateJson) :- initialize_game_three_players(GS), prolog_to_json(GS, GameStateJson).
+% init_two_player_game(Start,GameStateJson) :- initialize_game_two_players(GS), prolog_to_json(GS, GameStateJson).
 
                             % hands      scoreBoard  cardsInPlay  discardedCards, attackerindex, scoreboard nextMove
 last_game_state(GS) :-
