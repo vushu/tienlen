@@ -7,7 +7,7 @@
 
 :- initialization(start, main).
 :- dynamic client/1.
-:- dynamic room/2.
+:- dynamic room/3.
 
 % Define WebSocket handler
 :- http_handler(root(.), http_upgrade_to_websocket(handle_ws(run), []), [spawn([])]).
@@ -15,8 +15,16 @@
 % Start the WebSocket server on port 8000
 start :- http_server([port(8080)]).
 
-% Handle incoming WebSocket messages
+room(1, [], none).
+room(2, [], none).
+room(3, [], none).
+room(4, [], none).
 
+% Finding almost full rooms
+find_available_room(room(RoomId, Clients, GS)) :-
+    room(RoomId, Clients, GS),
+    length(Clients, Count),
+    Count < 4, !.
 
 % Stop the WebSocket connection
 handle_ws(stop, WebSocket) :- retract(client(WebSocket)), writeln('Stopping connection'), get_number_of_clients(L), format('Number of clients ~w~n', [L]).
@@ -28,6 +36,7 @@ handle_ws(run, WebSocket) :-
     handle_ws(State, WebSocket).
 
 handle_opcode(WebSocket, Msg, State) :-
+    writeln(WebSocket),
     Msg.opcode == close -> State = stop; State = run.
 
 % Skipping
@@ -164,4 +173,22 @@ test(placing_sequence_json) :-
         prolog_to_json(GS, _).
         % assertion(GSJSON = json([hands=[[json([rank=3,suit=clubs]),json([rank=7,suit=spades]),json([rank=7,suit=hearts]),json([rank=8,suit=clubs]),json([rank=q,suit=diamonds]),json([rank=k,suit=clubs]),json([rank=a,suit=clubs])],[],[json([rank=5,suit=clubs]),json([rank=6,suit=clubs]),json([rank=7,suit=clubs]),json([rank=10,suit=clubs]),json([rank=j,suit=clubs]),json([rank=j,suit=hearts]),json([rank=q,suit=spades]),json([rank=k,suit=spades]),json([rank=a,suit=diamonds]),json([rank=a,suit=hearts])],[json([rank=3,suit=diamonds]),json([rank=4,suit=diamonds]),json([rank=4,suit=hearts]),json([rank=6,suit=hearts]),json([rank=7,suit=diamonds]),json([rank=8,suit=hearts]),json([rank=9,suit=clubs]),json([rank=10,suit=hearts]),json([rank=j,suit=diamonds]),json([rank=k,suit=diamonds])]],player_states=[in_play,first,in_play,in_play],cards_in_play=json([sequence=[json([rank=j,suit=spades]),json([rank=q,suit=hearts]),json([rank=k,suit=hearts]),json([rank=a,suit=spades])]]),discarded_cards=[json([single=json([rank=3,suit=spades])]),json([single=json([rank=3,suit=hearts])]),json([single=json([rank=4,suit=spades])]),json([single=json([rank=4,suit=clubs])]),json([single=json([rank=10,suit=spades])]),json([single=json([rank=10,suit=diamonds])]),json([single=json([rank=q,suit=clubs])]),json([single=json([rank=2,suit=clubs])]),json([single=json([rank=2,suit=diamonds])]),json([three_of_kind=[json([rank=5,suit=spades]),json([rank=5,suit=diamonds]),json([rank=5,suit=hearts])]]),json([three_of_kind=[json([rank=9,suit=spades]),json([rank=9,suit=diamonds]),json([rank=9,suit=hearts])]]),json([pair=[json([rank=6,suit=spades]),json([rank=6,suit=diamonds])]]),json([pair=[json([rank=8,suit=spades]),json([rank=8,suit=diamonds])]]),json([pair=[json([rank=2,suit=spades]),json([rank=2,suit=hearts])]])],attacker=1,scoreboard=[],next_move=json([player=2,action=json([place=json([sequence=[json([rank=j,suit=hearts]),json([rank=q,suit=spades]),json([rank=k,suit=spades]),json([rank=a,suit=diamonds])]])])])])).
 
+test(run_top_level_test) :-  
+    global_level_test.
+
+
 :- end_tests(tienlen_server).
+
+global_level_test :-
+    retractall(room(_, _, _)),
+    assertz(room(1, [1,3,4], none)),
+    assertz(room(2, [], none)),
+    assertz(room(3, [], none)),
+    assertz(room(4, [], none)),
+    findall(room(ID, Clients, GS), room(ID, Clients, GS), Rooms),
+    format('Rooms after setup: ~w~n', [Rooms]),
+
+    find_available_room(room(ID, Clients, _)),
+    format('Found room: ~w~n', [room(ID, Clients, _)]),
+    assertion(ID = 1),
+    assertion(Clients = [1,3,4]).
