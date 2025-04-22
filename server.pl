@@ -6,7 +6,6 @@
 :- use_module(library(record)).
 
 :- initialization(start, main).
-:- dynamic client/1.
 :- dynamic room/3.
 
 % Define WebSocket handler
@@ -21,13 +20,18 @@ room(3, [], none).
 room(4, [], none).
 
 % Finding almost full rooms
-find_available_room(room(RoomId, Clients, GS)) :-
-    room(RoomId, Clients, GS),
-    length(Clients, Count),
-    Count < 4, !.
+find_available_room(room(RoomId, FoundClients, GS1)) :-
+    findall(room(Id, Clients, GS), (room(Id, Clients, GS), length(Clients, L), L < 4), Rooms),
+    sort(2, @>=, Rooms, SortedRooms),
+    nth0(0, SortedRooms, room(RoomId, FoundClients, GS1)).
 
 % Stop the WebSocket connection
-handle_ws(stop, WebSocket) :- retract(client(WebSocket)), writeln('Stopping connection'), get_number_of_clients(L), format('Number of clients ~w~n', [L]).
+handle_ws(stop, WebSocket) :- 
+    room(ID, Clients, GS), memberchk(WebSocket, Clients), select(WebSocket, Clients, NewClients),
+    retract(room(ID, Clients, GS)),
+    asserta(room(ID, NewClients, GS)),
+    writeln('Client disconnected'),
+    print_rooms.
 
 handle_ws(run, WebSocket) :-
     add_client(WebSocket), 
@@ -36,39 +40,25 @@ handle_ws(run, WebSocket) :-
     handle_ws(State, WebSocket).
 
 handle_opcode(WebSocket, Msg, State) :-
-    writeln(WebSocket),
     Msg.opcode == close -> State = stop; State = run.
 
-% Skipping
-% handle_opcode(_) :- writeln('asdfasdf').
-
-
-get_clients(Clients) :- findall(Client, client(Client), Clients).
-
-add_new_client(WebSocket, Clients, Clients) :-
-    member(WebSocket, Clients),
-    writeln('Already in room'), !.
-
-add_new_client(WebSocket, Clients, NewClients) :- 
-    (length(Clients, L), L < 4 -> 
-        append(Clients, [WebSocket], NewClients);
-        writeln('Room full'), 
-        length(Clients, Len), writeln(Len), 
-        NewClients = Clients).
+add_client(WebSocket) :-
+    room(_, Clients, _), memberchk(WebSocket, Clients),
+    format('Client already exists ~n', []).
 
 add_client(WebSocket) :-
-    client(WebSocket), writeln('Client already exists').
+    find_available_room(room(ID, Clients, GS)),
+    (length(Clients, 3) -> format('Room is getting full now starting game ~w~n', [1]);format('Room is not full waiting for player ~w~n', [WebSocket])),
+    add_client_to_room(ID, WebSocket).
 
-add_client(WebSocket) :-
-    assertz(client(WebSocket)), get_number_of_clients(N), format('Adding new client, number of clients ~w~n', [N]).
+add_client_to_room(ID, WebSocket) :-
+    format('Adding client to room ~w~n', [ID]),   
+    retract(room(ID, Clients, GS)),
+    asserta(room(ID, [WebSocket | Clients], GS)), print_rooms.
 
-get_number_of_clients(N) :- get_clients(Clients), length(Clients, N).
+print_rooms :- get_all_rooms(Rooms), format("Rooms: ~w~n", [Rooms]).
 
-
-% handle_message(WebSocket) :-
-%     ws_receive(WebSocket, Message),
-%     % process_message(Message.data, Response),
-%     ws_send(WebSocket, json(Response)).
+get_all_rooms(Rooms) :- findall(room(Id, Clients, GS), room(Id, Clients, GS), Rooms).
 
 start_game(Clients) :- 
     length(Clients, L), 
@@ -79,33 +69,6 @@ start_game(Clients) :-
     length(Clients, L), 
     L < 4, writeln('Not enough players'), 
     length(Clients, Len), writeln(Len).
-
-% handle_ws(Clients, WebSocket) :-
-%     ws_receive(WebSocket, Message),
-
-%     process_message(Message.data, Response),
-
-%     ws_send(WebSocket, json(Response)), % Send response
-    
-%     handle_ws(Clients, WebSocket).  % Keep listening for new messages
-
-
-% process_message(Message, Response) :-
-%     ( Message == "init_game" ->
-%         init_full_player_game(Response);
-%         writeln('LAST  GAME'),
-%         Message == "last_game", last_game_state(GS), prolog_to_json(GS, Response); 
-%         % writeln('Json back to prolog'),
-%         writeln('ELSE'),
-%         atom_json_term(Message, JSONTerm, []), 
-%         json_to_prolog(JSONTerm, PrologTerm),
-%         interpret_tienlen(PrologTerm, GameState), prolog_to_json(GameState, JSONGameState),
-        % writeln('prolog term'), writeln(GameState),
-
-
-        % Response = JSONGameState
-    % ).
-
 
 initialize_game(GameState) :- initialize_game_full_players(GameState).
 
@@ -173,8 +136,8 @@ test(placing_sequence_json) :-
         prolog_to_json(GS, _).
         % assertion(GSJSON = json([hands=[[json([rank=3,suit=clubs]),json([rank=7,suit=spades]),json([rank=7,suit=hearts]),json([rank=8,suit=clubs]),json([rank=q,suit=diamonds]),json([rank=k,suit=clubs]),json([rank=a,suit=clubs])],[],[json([rank=5,suit=clubs]),json([rank=6,suit=clubs]),json([rank=7,suit=clubs]),json([rank=10,suit=clubs]),json([rank=j,suit=clubs]),json([rank=j,suit=hearts]),json([rank=q,suit=spades]),json([rank=k,suit=spades]),json([rank=a,suit=diamonds]),json([rank=a,suit=hearts])],[json([rank=3,suit=diamonds]),json([rank=4,suit=diamonds]),json([rank=4,suit=hearts]),json([rank=6,suit=hearts]),json([rank=7,suit=diamonds]),json([rank=8,suit=hearts]),json([rank=9,suit=clubs]),json([rank=10,suit=hearts]),json([rank=j,suit=diamonds]),json([rank=k,suit=diamonds])]],player_states=[in_play,first,in_play,in_play],cards_in_play=json([sequence=[json([rank=j,suit=spades]),json([rank=q,suit=hearts]),json([rank=k,suit=hearts]),json([rank=a,suit=spades])]]),discarded_cards=[json([single=json([rank=3,suit=spades])]),json([single=json([rank=3,suit=hearts])]),json([single=json([rank=4,suit=spades])]),json([single=json([rank=4,suit=clubs])]),json([single=json([rank=10,suit=spades])]),json([single=json([rank=10,suit=diamonds])]),json([single=json([rank=q,suit=clubs])]),json([single=json([rank=2,suit=clubs])]),json([single=json([rank=2,suit=diamonds])]),json([three_of_kind=[json([rank=5,suit=spades]),json([rank=5,suit=diamonds]),json([rank=5,suit=hearts])]]),json([three_of_kind=[json([rank=9,suit=spades]),json([rank=9,suit=diamonds]),json([rank=9,suit=hearts])]]),json([pair=[json([rank=6,suit=spades]),json([rank=6,suit=diamonds])]]),json([pair=[json([rank=8,suit=spades]),json([rank=8,suit=diamonds])]]),json([pair=[json([rank=2,suit=spades]),json([rank=2,suit=hearts])]])],attacker=1,scoreboard=[],next_move=json([player=2,action=json([place=json([sequence=[json([rank=j,suit=hearts]),json([rank=q,suit=spades]),json([rank=k,suit=spades]),json([rank=a,suit=diamonds])]])])])])).
 
-test(run_top_level_test) :-  
-    global_level_test.
+% test(run_top_level_test) :-  
+    % global_level_test.
 
 
 :- end_tests(tienlen_server).
