@@ -48,7 +48,12 @@ add_client(WebSocket) :-
 
 add_client(WebSocket) :-
     find_available_room(room(ID, Clients, GS)),
-    (length(Clients, 3) -> format('Room is getting full now starting game ~w~n', [1]);format('Room is not full waiting for player ~w~n', [WebSocket])),
+    (
+        length(Clients, 3) 
+            -> format(atom(Message),'Room is getting full now starting game ~w~n', [1]),
+                send_message(WebSocket, Message)
+            ; format(atom(Mess),'Room is not full waiting for player ~w~n', [WebSocket]), send_message(WebSocket, Mess) 
+    ),
     add_client_to_room(ID, WebSocket).
 
 add_client_to_room(ID, WebSocket) :-
@@ -71,6 +76,9 @@ start_game(Clients) :-
     length(Clients, Len), writeln(Len).
 
 initialize_game(GameState) :- initialize_game_full_players(GameState).
+
+send_message(Client, Message) :- 
+    ws_send(Client, json(Message)).
 
 :- json_object
     card(rank: (text;integer), suit: text).
