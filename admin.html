@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TienLen admin</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #ecf0f1;
+            background: radial-gradient(ellipse at top, #1d6f42 0%, #14532d 55%, #0c3a1e 100%);
+        }
+
+        h1 {
+            margin: 0 0 16px;
+            letter-spacing: 1px;
+        }
+
+        section {
+            background: rgba(0, 0, 0, 0.25);
+            border-radius: 12px;
+            padding: 14px 18px;
+            margin-bottom: 14px;
+        }
+
+        h2 {
+            margin: 0 0 10px;
+            font-size: 1em;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: rgba(236, 240, 241, 0.75);
+        }
+
+        #statusbar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+        }
+
+        .chip {
+            padding: 6px 14px;
+            border-radius: 999px;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+        }
+
+        .chip.turn {
+            color: #7dffa8;
+            border-color: rgba(125, 255, 168, 0.5);
+        }
+
+        .chip.over {
+            color: #f1c40f;
+            border-color: rgba(241, 196, 15, 0.5);
+        }
+
+        .cards-row {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin: 8px 0;
+            align-items: center;
+        }
+
+        .card {
+            width: 44px;
+            height: 62px;
+            border-radius: 6px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #fdfdfb;
+            color: #1c1c1c;
+            font-family: Georgia, serif;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+        }
+
+        .card.red {
+            color: #c0392b;
+        }
+
+        .card .r {
+            font-size: 16px;
+            font-weight: bold;
+            line-height: 1;
+        }
+
+        .card .s {
+            font-size: 19px;
+            line-height: 1.15;
+        }
+
+        .player-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 6px 0;
+        }
+
+        .player-row .name {
+            min-width: 90px;
+            font-weight: 600;
+        }
+
+        .player-row .count {
+            color: rgba(236, 240, 241, 0.7);
+            font-size: 0.85em;
+            min-width: 70px;
+        }
+
+        .player-row button.small {
+            margin-left: auto;
+            padding: 3px 12px;
+            font-size: 0.8em;
+        }
+
+        p.none {
+            color: rgba(236, 240, 241, 0.5);
+            margin: 4px 0;
+        }
+
+        .badge {
+            padding: 1px 8px;
+            border-radius: 999px;
+            font-size: 0.75em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .badge.pass {
+            color: #f39c12;
+            background: rgba(243, 156, 18, 0.15);
+            border: 1px solid rgba(243, 156, 18, 0.5);
+        }
+
+        .badge.place {
+            color: #7dffa8;
+            background: rgba(125, 255, 168, 0.12);
+            border: 1px solid rgba(125, 255, 168, 0.4);
+        }
+
+        .badge.turn {
+            color: #7dffa8;
+            border: 1px solid rgba(125, 255, 168, 0.5);
+            background: rgba(125, 255, 168, 0.1);
+        }
+
+        .round-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 4px 0;
+            font-size: 0.9em;
+            flex-wrap: wrap;
+        }
+
+        .round-label {
+            font-weight: 700;
+            color: rgba(241, 196, 15, 0.8);
+            min-width: 28px;
+        }
+
+        .round-item {
+            padding: 1px 8px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .actions {
+            margin-top: 18px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 8px 16px;
+            font-size: 0.95em;
+            font-weight: 600;
+            color: #ecf0f1;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: rgba(255, 255, 255, 0.22);
+        }
+
+        button.danger {
+            background: rgba(180, 60, 60, 0.55);
+            border-color: rgba(220, 90, 90, 0.7);
+        }
+
+        button.danger:hover {
+            background: rgba(200, 70, 70, 0.75);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        #feedback {
+            min-height: 1.2em;
+            font-weight: 600;
+            color: #7dffa8;
+        }
+
+        /* ---------- Responsive: phones ---------- */
+        @media (max-width: 640px) {
+            body {
+                padding: 12px;
+            }
+
+            h1 {
+                font-size: 1.2em;
+                margin-bottom: 10px;
+            }
+
+            section {
+                padding: 10px 12px;
+                margin-bottom: 10px;
+            }
+
+            /* Smaller cards so a full table fits without scrolling. */
+            .card {
+                width: 34px;
+                height: 48px;
+                border-radius: 5px;
+            }
+
+            .card .r {
+                font-size: 13px;
+            }
+
+            .card .s {
+                font-size: 15px;
+            }
+
+            /* Rows stack the kick button onto its own line when tight. */
+            .player-row {
+                flex-wrap: wrap;
+            }
+
+            .player-row .name {
+                min-width: 0;
+                flex: 1;
+            }
+
+            .player-row .count {
+                min-width: 0;
+            }
+
+            .player-row button.small {
+                margin-left: 0;
+                padding: 5px 14px;
+            }
+
+            /* Comfortable touch targets. */
+            button {
+                padding: 10px 16px;
+                font-size: 1em;
+            }
+
+            .actions button {
+                flex: 1 1 100%;
+            }
+
+            .chip {
+                padding: 5px 12px;
+                font-size: 0.9em;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <h1>♠ Tiến Lên — admin</h1>
+    <div id="statusbar"></div>
+    <section id="gamestate"></section>
+    <section id="roster"></section>
+    <section id="scoreboard"></section>
+    <div class="actions">
+        <button id="restart" onclick="restartGame()">Restart Game</button>
+        <button id="kick" class="danger" onclick="kickAll()">Kick All Players</button>
+    </div>
+    <p id="feedback"></p>
+
+    <script>
+        const SUITS = { hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' };
+        const ORD = { first: '1st', second: '2nd', third: '3rd', fourth: '4th' };
+
+        function cardEl(c) {
+            const el = document.createElement('span');
+            el.className = 'card' + ((c.suit === 'hearts' || c.suit === 'diamonds') ? ' red' : '');
+            el.innerHTML = '<span class=r>' + String(c.rank).toUpperCase() + '</span><span class=s>' + (SUITS[c.suit] || '') + '</span>';
+            return el;
+        }
+
+        function renderStatus(d) {
+            const bar = document.getElementById('statusbar');
+            let html = '<span class=chip>Players: ' + d.seated + '</span>' +
+                '<span class=chip>Spectators: ' + d.spectators + '</span>';
+            if (d.game.running) {
+                html += '<span class="chip turn">Turn: Player ' + (d.game.turn + 1) + ' (' + d.game.action + ')</span>';
+            } else {
+                html += '<span class=chip>No game running</span>';
+            }
+            bar.innerHTML = html;
+        }
+
+        function renderGame(d) {
+            const sec = document.getElementById('gamestate');
+            if (!d.game.running) { sec.innerHTML = ''; return; }
+            let html = '<h2>Cards in play</h2><div class=cards-row id=cip></div>';
+            sec.innerHTML = html;
+            const cip = sec.querySelector('#cip');
+            const c = d.game.cards_in_play;
+            if (c && c !== 'none') {
+                const cards = c.type === 'single' ? [c.card] : c.cards;
+                cards.forEach(cd => cip.appendChild(cardEl(cd)));
+            } else {
+                cip.innerHTML = '<span style="opacity:0.5">table empty</span>';
+            }
+        }
+
+        // Player and spectator lists with per-seat Kick buttons. Seats are
+        // contiguous (0..seated-1); during a game the card counts come from
+        // hand_counts, otherwise just the seat number is shown. Aliases
+        // are used when set.
+        function renderRoster(d) {
+            const sec = document.getElementById('roster');
+            const names = {};
+            (d.names || []).forEach(e => { names[e.seat] = e.name; });
+            let html = '<h2>Players</h2>';
+            if (d.seated === 0) {
+                html += '<p class=none>none</p>';
+            } else {
+                for (let i = 0; i < d.seated; i++) {
+                    const cards = d.game.running && d.game.hand_counts[i] !== undefined
+                        ? d.game.hand_counts[i] + ' cards' : 'seated';
+                    const name = names[i] || ('Player ' + (i + 1));
+                    html += '<div class=player-row><span class=name>' + name +
+                        '</span><span class=count>' + cards + '</span>' +
+                        '<button class="danger small" onclick="kickOne(' + i + ')">Kick</button></div>';
+                }
+            }
+            html += '<h2>Spectators</h2>';
+            if (!d.spectators) {
+                html += '<p class=none>none</p>';
+            } else {
+                for (let i = 0; i < d.spectators; i++) {
+                    html += '<div class=player-row><span class=name>Spectator ' + (i + 1) +
+                        '</span><span class=count>watching</span>' +
+                        '<button class="danger small" onclick="kickSpec(' + i + ')">Kick</button></div>';
+                }
+            }
+            sec.innerHTML = html;
+        }
+
+        function renderScoreboard(d) {
+            const sec = document.getElementById('scoreboard');
+            const sb = (d.game && d.game.scoreboard) || [];
+            if (!sb.length) { sec.innerHTML = ''; return; }
+            // Seat -> alias for nicer labels (fall back to P1/P2/...).
+            const names = {};
+            (d.names || []).forEach(e => { names[e.seat] = e.name; });
+            const label = seat => names[seat] || ('P' + (seat + 1));
+            let html = '<h2>Scoreboard</h2>';
+            sb.forEach((round, i) => {
+                html += '<div class=round-row><span class=round-label>R' + (i + 1) + '</span>';
+                round.forEach((place, seat) => {
+                    html += '<span class=round-item>' + (ORD[place] || place) + ': ' + label(seat) + '</span>';
+                });
+                html += '</div>';
+            });
+            sec.innerHTML = html;
+        }
+
+        // Base path: the directory this page was served from (supports
+        // hosting under a subpath like /tienlen/ behind a reverse proxy).
+        const base = location.pathname.replace(/\/admin\/?$/, '');
+        // Forward the admin key from this page's URL to the API calls.
+        const key = new URLSearchParams(location.search).get('key') || '';
+
+        async function refresh() {
+            try {
+                const r = await fetch(base + '/admin/status' + (key ? '?key=' + encodeURIComponent(key) : ''));
+                const d = await r.json();
+                renderStatus(d);
+                renderGame(d);
+                renderRoster(d);
+                renderScoreboard(d);
+            } catch (e) { /* server restarting */ }
+        }
+
+        async function kickAll() {
+            const btn = document.getElementById('kick');
+            const fb = document.getElementById('feedback');
+            btn.disabled = true;
+            fb.textContent = 'Kicking...';
+            try {
+                const r = await fetch(base + '/admin/kick-all' + (key ? '?key=' + encodeURIComponent(key) : ''), { method: 'POST' });
+                fb.textContent = r.ok ? 'Kicked all players' : 'Kick failed (' + r.status + ')';
+                await refresh();
+            } catch (e) { fb.textContent = 'Kick failed: ' + e; }
+            btn.disabled = false;
+        }
+
+        async function restartGame() {
+            const btn = document.getElementById('restart');
+            const fb = document.getElementById('feedback');
+            btn.disabled = true;
+            fb.textContent = 'Restarting...';
+            try {
+                const r = await fetch(base + '/admin/restart' + (key ? '?key=' + encodeURIComponent(key) : ''), { method: 'POST' });
+                if (r.ok) {
+                    fb.textContent = 'Game restarted';
+                } else {
+                    const d = await r.json().catch(() => null);
+                    fb.textContent = 'Restart failed: ' + (d && d.error === 'need_two_players'
+                        ? 'need at least 2 seated players' : '(' + r.status + ')');
+                }
+                await refresh();
+            } catch (e) { fb.textContent = 'Restart failed: ' + e; }
+            btn.disabled = false;
+        }
+
+        async function kickOne(seat) {
+            const fb = document.getElementById('feedback');
+            fb.textContent = 'Kicking Player ' + (seat + 1) + '...';
+            try {
+                const r = await fetch(base + '/admin/kick?seat=' + seat + (key ? '&key=' + encodeURIComponent(key) : ''), { method: 'POST' });
+                fb.textContent = r.ok ? 'Kicked Player ' + (seat + 1) : 'Kick failed (' + r.status + ')';
+                await refresh();
+            } catch (e) { fb.textContent = 'Kick failed: ' + e; }
+        }
+
+        async function kickSpec(i) {
+            const fb = document.getElementById('feedback');
+            fb.textContent = 'Kicking Spectator ' + (i + 1) + '...';
+            try {
+                const r = await fetch(base + '/admin/kick?spec=' + i + (key ? '&key=' + encodeURIComponent(key) : ''), { method: 'POST' });
+                fb.textContent = r.ok ? 'Kicked Spectator ' + (i + 1) : 'Kick failed (' + r.status + ')';
+                await refresh();
+            } catch (e) { fb.textContent = 'Kick failed: ' + e; }
+        }
+
+        refresh();
+        setInterval(refresh, 2000);
+    </script>
+</body>
+
+</html>

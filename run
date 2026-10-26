@@ -1,1 +1,7 @@
-swipl -l server.pl -g start
+#!/bin/sh
+# Start the TienLen server (port 8080) in the foreground:
+#   - /       the game client (index.html, client.js)
+#   - /ws     the WebSocket endpoint the client connects to
+#   - /admin  the admin page (Kick All)
+# For daemon/webserver mode, see run_server.sh and tienlen.service.
+exec ./run.sh

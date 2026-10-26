@@ -18,6 +18,8 @@ jobs:
 
     - name: Install SWI-Prolog
       run: |
+        # Use the official SWI-Prolog PPA for a recent stable version
+        sudo apt-add-repository ppa:swi-prolog/stable -y
         sudo apt-get update
         sudo apt-get install -y swi-prolog
 

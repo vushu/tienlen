@@ -1,0 +1,1 @@
+swipl -l server.pl -g start

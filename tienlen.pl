@@ -1,4 +1,4 @@
-:- module(tienlen, [card_score/2, start_game/3, start_game/4, start_game/5, initialize_game_full_players/1, initialize_game_three_players/1, initialize_game_two_players/1, interpret_tienlen/2]).
+:- module(tienlen, [card_score/2, start_game/3, start_game/4, start_game/5, initialize_game_full_players/1, initialize_game_three_players/1, initialize_game_two_players/1, interpret_tienlen/2, simulate_pass_move/2, simulate_placing_cards/3, get_next_move/2, get_cards_in_play/2, get_player_states/2, get_attacker_index/2, get_discarded_cards/2, next_player/4]).
 :- use_module(cards).
 
 rank_value(3, 3). rank_value(4, 4). rank_value(5, 5).
@@ -49,8 +49,9 @@ start_game(SortedP1, SortedP2, SortedP3, SortedP4, PlayerStart) :-
     player_with_lowest_card(Cards, PlayerStart).
 
 append_multiple([], []).
-append_multiple([H, H2 | T], R3) :-
-    append(H, H2, R), append_multiple(T, R2), append(R, R2, R3).
+append_multiple([H | T], R) :-
+    append_multiple(T, R2),
+    append(H, R2, R).
 
 no_hands_has_been_played(Lists) :-
     maplist(is_full_hand, Lists).
@@ -514,7 +515,11 @@ get_double_sequence_from_hand_([H | T], R) :-
     get_double_sequence_from_hand_(T, Rest).
 
 get_all_possible_hands(SortedHand, FoundHands) :-
-    findall(FoundHand, find_tienlen_hands(SortedHand, FoundHand), FoundHands).
+    % find_tienlen_hands requires the hand sorted by score (it matches
+    % adjacent cards for pairs/kinds/sequences); hands are stored in deal
+    % order, so sort first.
+    sort_by_score(SortedHand, Sorted),
+    findall(FoundHand, find_tienlen_hands(Sorted, FoundHand), FoundHands).
 
 possible_to_beat_with_hand(CurrentPlayerHand, single(Card)) :-
     length(CurrentPlayerHand, NumberCardsOfPlayer),
@@ -756,6 +761,17 @@ test(possible_to_beat_with_hand_three_of_kind, [fail]) :-
     get_predefined_hands(P1, _, _, _), % has three of kind of 5 where highest card suit is hearts
     sort_by_score(P1, SortedHand),
     possible_to_beat_with_hand(SortedHand, three_of_kind([card(6,spades),card(6,diamonds),card(6,hearts)])).
+
+% Regression: hands are stored in deal order (unsorted); pairs/kinds that
+% are not adjacent must still be found (bug: engine forced a pass while the
+% player held a higher pair).
+test(possible_to_beat_with_hand_unsorted_pair) :-
+    Hand = [card(q,spades),card(3,hearts),card(4,clubs),card(4,diamonds),card(8,hearts),card(9,hearts),card(k,clubs),card(q,hearts),card(5,diamonds),card(k,diamonds),card(2,clubs)],
+    possible_to_beat_with_hand(Hand, pair([card(8,spades),card(8,clubs)])).
+
+test(possible_to_beat_with_hand_unsorted_sequence) :-
+    Hand = [card(10,hearts),card(3,spades),card(j,clubs),card(5,diamonds),card(q,hearts),card(9,spades),card(k,diamonds)],
+    possible_to_beat_with_hand(Hand, sequence([card(7,spades),card(8,hearts),card(9,clubs)])).
 
 test(possible_to_beat_with_hand_four_of_kind) :-
     get_four_of_kind_predefined_hand(Hand),

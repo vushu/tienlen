@@ -1,0 +1,37 @@
+# systemd service for the TienLen server.
+# Install on your webserver:
+#   sudo cp tienlen.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now tienlen
+#
+# Logs: journalctl -u tienlen -f
+# Restart after code changes: sudo systemctl restart tienlen
+
+[Unit]
+Description=TienLen card game server
+After=network.target
+
+[Service]
+Type=simple
+# Adjust to where you deploy the repo:
+WorkingDirectory=/opt/tienlen
+ExecStart=/usr/bin/swipl server.pl -g serve -- --port=8080
+Restart=on-failure
+RestartSec=3
+
+# Security: run as a dedicated user (create with:
+#   sudo useradd -r -s /usr/sbin/nologin tienlen)
+User=tienlen
+Group=tienlen
+
+# Your room code and admin key (or use an EnvironmentFile):
+Environment=TIENLEN_ROOM_CODE=change-me
+Environment=TIENLEN_ADMIN_KEY=change-me-too
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/tienlen
+
+[Install]
+WantedBy=multi-user.target
