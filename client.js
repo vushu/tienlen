@@ -87,12 +87,19 @@ function connectSocket() {
     }
     const room = sessionStorage.getItem('tienlen_room') || '';
     const roomParam = room ? '&room=' + encodeURIComponent(room) : '';
+    // Identity token (persistent rooms): stored in localStorage so it
+    // survives browser restarts - the server uses it to own a seat in
+    // a long-running game. Separate from the per-tab session token.
+    if (!localStorage.getItem('tienlen_ident')) {
+        localStorage.setItem('tienlen_ident', crypto.randomUUID());
+    }
+    const ident = localStorage.getItem('tienlen_ident');
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = location.host;   // works when served from the server itself
     // Base path: the directory this page was served from (supports
     // hosting under a subpath like /tienlen/ behind a reverse proxy).
     const base = location.pathname.replace(/\/[^/]*$/, '');
-    socket = new WebSocket(proto + '//' + host + base + '/ws?token=' + token + roomParam);
+    socket = new WebSocket(proto + '//' + host + base + '/ws?token=' + token + '&ident=' + ident + roomParam);
 
     socket.onopen = () => {
         console.log('Connected to WebSocket server');
@@ -249,6 +256,9 @@ function connectSocket() {
         const turnEl = document.getElementById('player-turn');
         turnEl.textContent = turnText;
         turnEl.classList.toggle('your-turn', isYourTurn);
+        // Browser notification when it becomes our turn (the tab may be
+        // in the background; the title flash covers the minimized case).
+        notifyTurn(isYourTurn, isGameOver);
         // During a forced pass, Pass is the only legal action; on an empty
         // table (you have the lead) you must place, so Pass is disabled.
         // Place needs a selection, and is impossible during a forced pass.
@@ -317,6 +327,52 @@ function beatOnVisible() {
         socket.send(JSON.stringify({ type: 'ping' }));
     }
 }
+
+// Browser notification when it becomes our turn: the tab is open but may
+// be in the background. Permission is requested on the first user click
+// (browsers require a gesture); the title also flashes as a fallback.
+let lastNotifiedTurn = false;
+
+function notifyTurn(isYourTurn, isGameOver) {
+    if (isYourTurn && !isGameOver && !lastNotifiedTurn) {
+        if (document.hidden && Notification.permission === 'granted') {
+            new Notification('Tiến Lên', {
+                body: "It's your turn!",
+                tag: 'tienlen-turn'   // replaces the previous notification
+            });
+        }
+        flashTitle("It's your turn!");
+    }
+    lastNotifiedTurn = isYourTurn && !isGameOver;
+}
+
+// Flash the tab title until the tab is focused: visible even when
+// notifications are denied, and in browsers without them.
+let titleFlashTimer = null;
+
+function flashTitle(message) {
+    stopTitleFlash();
+    const original = document.title;
+    let on = false;
+    titleFlashTimer = setInterval(() => {
+        on = !on;
+        document.title = on ? '♠ ' + message : original;
+    }, 1000);
+    const stop = () => { stopTitleFlash(); document.title = original; };
+    window.addEventListener('focus', stop, { once: true });
+}
+
+function stopTitleFlash() {
+    if (titleFlashTimer) { clearInterval(titleFlashTimer); titleFlashTimer = null; }
+}
+
+// Request notification permission on the first user interaction
+// (browsers require a gesture before granting it).
+document.addEventListener('click', function requestNotify() {
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+}, { once: true });
 
 // The display label for a seat: the player's alias if set, else
 // "Player N". Spectators (seat -1) have no number.
@@ -529,6 +585,12 @@ function startGraceCountdown(seat) {
     banner.id = 'grace-countdown';
     banner.className = 'grace-countdown';
     document.body.appendChild(banner);
+    // Persistent room: the seat is owned, the player is just away -
+    // no countdown, the game simply waits for them to return.
+    if (receivedData && receivedData.persistent) {
+        banner.textContent = `${seatLabel(seat)} is away — the game waits for their return`;
+        return;
+    }
     let remaining = 10;
     const render = () => {
         banner.textContent = `${seatLabel(seat)} disconnected — waiting to reconnect (${remaining}s)`;

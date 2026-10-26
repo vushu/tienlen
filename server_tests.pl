@@ -392,9 +392,9 @@ test(start_new_game_settles_opening) :-
 test(lobby_no_autostart) :-
     server:retractall(players(_)), server:assertz(players([])),
     server:retractall(game(_)),
-    catch(seat_client(fake_ws_0, none), _, true),
-    catch(seat_client(fake_ws_1, none), _, true),
-    catch(seat_client(fake_ws_2, none), _, true),
+    catch(seat_client(fake_ws_0, none, none), _, true),
+    catch(seat_client(fake_ws_1, none, none), _, true),
+    catch(seat_client(fake_ws_2, none, none), _, true),
     \+ game(_),
     players([]),
     server:spectators(Specs),
@@ -455,7 +455,7 @@ test(reconnect_reclaims_seat) :-
     server:retractall(game(_)),
     server:retractall(session(_, _)),
     server:assertz(session(0, token_a)),
-    catch(seat_client(new_ws, token_a), _, true),
+    catch(seat_client(new_ws, token_a, none), _, true),
     players([new_ws, fake_ws_1]),   % seat 0 replaced, not appended
     server:session(0, token_a),     % session still registered
     cleanup_fake_game.
@@ -471,7 +471,7 @@ test(join_after_kick_seats_and_lifts_ban) :-
     server:retractall(kicked_session(_)),
     server:retractall(ws_token(_, _)),
     server:assertz(kicked_session(token_k)),
-    catch(seat_client(kicked_ws, token_k), _, true),   % reconnect: spectator
+    catch(seat_client(kicked_ws, token_k, none), _, true),   % reconnect: spectator
     server:spectators(Specs1), memberchk(kicked_ws, Specs1),
     catch(handle_message(kicked_ws, '{"type":"join"}'), _, true),
     players([kicked_ws]),                    % seated via the join message
@@ -496,7 +496,7 @@ test(fresh_connection_spectator_until_join) :-
     server:retractall(game(_)),
     server:retractall(session(_, _)),
     server:retractall(ws_token(_, _)),
-    catch(seat_client(fresh_ws, token_fresh), _, true),
+    catch(seat_client(fresh_ws, token_fresh, none), _, true),
     players([]),                              % not seated automatically
     server:spectators(Specs), memberchk(fresh_ws, Specs),
     catch(handle_message(fresh_ws, '{"type":"join"}'), _, true),

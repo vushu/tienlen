@@ -17,7 +17,7 @@
 %
 % Run with: swipl server.pl   (or ./run)
 
-:- module(server, [start/0, handle_ws/2, handle_message/2, handle_move/2, handle_kick_all/0, apply_move/3, settle/2, place_term/2, game_is_over/1, extract_player_index/2, client_action_allowed/2, start_new_game/0, update_game/1, broadcast/1, player_view/3, send_json/2, seat_client/2, remove_client/1, players/1, game/1, handle_player_left/2, broadcast_event/2, bomb_beaten/2]).
+:- module(server, [start/0, handle_ws/3, handle_message/2, handle_move/2, handle_kick_all/0, apply_move/3, settle/2, place_term/2, game_is_over/1, extract_player_index/2, client_action_allowed/2, start_new_game/0, update_game/1, broadcast/1, player_view/3, send_json/2, seat_client/3, remove_client/1, players/1, game/1, handle_player_left/2, broadcast_event/2, bomb_beaten/2]).
 :- use_module(library(http/http_server)).
 :- use_module(library(http/websocket)).
 :- use_module(library(http/http_files)).
@@ -100,6 +100,11 @@ players([]).
 % Set via environment variables before starting:
 %   TIENLEN_ROOM_CODE  - players must enter this to join (default: none)
 %   TIENLEN_ADMIN_KEY  - required for admin endpoints (default: none)
+%   TIENLEN_PERSISTENT - "1" = persistent room mode: seats are owned by
+%                        long-lived identity tokens, disconnects never
+%                        free a seat, and the game state is saved to disk
+%                        after every move (survives server restarts).
+%                        For long-running games between trusted players.
 %
 % When a variable is unset/empty, that check is disabled (local play).
 % ---------------------------------------------------------------------------
@@ -111,6 +116,12 @@ room_code(none).
 admin_key(Key) :-
     getenv('TIENLEN_ADMIN_KEY', Key), Key \== '', !.
 admin_key(none).
+
+% Persistent room mode (see above).
+persistent_mode :-
+    getenv('TIENLEN_PERSISTENT', V), V \== '', !.
+persistent_mode :-
+    getenv('TIENLEN_PERSISTENT', '1'), !.
 
 % True when the request carries the correct room code (or no code is set).
 authorized_room(_) :-
@@ -147,6 +158,7 @@ authorized_admin(Request) :-
 
 start :-
     register_routes,
+    load_room_state,
     % Listen on IPv6 any first (on macOS it accepts v4-mapped connections
     % too), falling back to plain IPv4. This keeps the server reachable
     % from same-Wi-Fi devices via link-local IPv6 even when a corporate
@@ -212,6 +224,7 @@ register_one(Prefix, Path, Handler, Options) :-
 
 serve :-
     register_routes,
+    load_room_state,
     (   room_code(C), C == none
     ->  format(user_error, 'Room code: DISABLED (anyone can join)~n', [])
     ;   format(user_error, 'Room code: enabled~n', [])
@@ -228,11 +241,12 @@ serve :-
 ws_with_token(Request) :-
     (   authorized_room(Request)
     ->  (   memberchk(search(Search), Request),
-            memberchk(token=Token, Search)
+            (   memberchk(token=Token, Search) -> true ; Token = none ),
+            (   memberchk(ident=Ident, Search) -> true ; Ident = none )
         ->  true
-        ;   Token = none
+        ;   Token = none, Ident = none
         ),
-        http_upgrade_to_websocket(handle_ws(Token), [], Request)
+        http_upgrade_to_websocket(handle_ws(Token, Ident), [], Request)
     ;   % Wrong or missing room code: refuse the upgrade.
         reply_json_dict(_{error:unauthorized}, [status(401)])
     ).
@@ -272,8 +286,9 @@ handle_admin_status(Request) :-
             ),
             Game = _{running:false, scoreboard:SB}
         ),
+        (   persistent_mode -> Persistent = true ; Persistent = false ),
         reply_json_dict(_{seated:N, spectators:S, game:Game, names:Roster,
-                          disconnected:DeadSeats})
+                          disconnected:DeadSeats, persistent:Persistent})
     ;   reply_json_dict(_{error:unauthorized}, [status(401)])
     ).
 
@@ -359,11 +374,18 @@ admin_restart_thread :-
 handle_kick_one(seat, Seat) :-
     players(Players),
     (   between(0, 3, Seat),
-        nth0(Seat, Players, WS),
-        socket_alive(WS)
+        nth0(Seat, Players, WS)
     ->  format(user_error, 'ADMIN KICK seat ~w~n', [Seat]),
         (   kicked_token(WS, Token), Token \== none
         ->  retractall(kicked_session(Token)), assertz(kicked_session(Token))
+        ;   true
+        ),
+        % Persistent room: the kick frees the seat and clears the
+        % ownership, so the next connection of that identity is a
+        % spectator again (the admin's escape hatch for stuck seats).
+        (   persistent_mode
+        ->  retractall(seat_owner(Seat, _)),
+            save_room_state
         ;   true
         ),
         catch(ws_close(WS, 1000, 'kicked'), _, true)
@@ -401,8 +423,8 @@ serve_admin_page(Request) :-
 % Seat once per connection, then process messages until the connection
 % closes. The loop must not re-seat: a kicked or dying socket's error path
 % would otherwise re-add the dead socket to the lobby.
-handle_ws(Token, WS) :-
-    with_mutex(tienlen_game, seat_client(WS, Token)),
+handle_ws(Token, Ident, WS) :-
+    with_mutex(tienlen_game, seat_client(WS, Token, Ident)),
     handle_ws_loop(WS).
 
 % A dropped connection (tab closed, network loss) surfaces as an
@@ -427,12 +449,17 @@ handle_ws_loop(WS) :-
 % player reclaims that seat (page refresh keeps your hand). While no game
 % is running, everyone sees the lobby status; a game is started with a
 % "new_game" message once at least 2 are seated.
-seat_client(WS, Token) :-
-    % Remember the token for this connection (used by the spectator
-    % "join" message to register the session after seating).
+seat_client(WS, Token, Ident) :-
+    % Remember the tokens for this connection: the per-tab session token
+    % (seat reclaim on refresh) and, in persistent mode, the long-lived
+    % identity token (seat ownership).
     retractall(ws_token(WS, _)),
     (   Token \== none
     ->  assertz(ws_token(WS, Token))
+    ;   true
+    ),
+    (   Ident \== none
+    ->  assertz(ws_ident(WS, Ident))
     ;   true
     ),
     % Fresh connection: stamp the heartbeat clock so the watchdog does
@@ -443,6 +470,20 @@ seat_client(WS, Token) :-
     catch(start_watchdog, _, true),
     players(List),
     (   memberchk(WS, List) -> true    % already seated (shouldn't happen)
+    ;   persistent_mode,
+        ws_ident(WS, Ident), Ident \== none,
+        seat_owner(Seat, Ident)
+    ->  % Persistent room: the identity token owns a seat. Take it back
+        % regardless of the old socket's state - the seat is theirs.
+        replace_at(Seat, List, WS, NewList),
+        retract(players(List)), assertz(players(NewList)),
+        format(user_error, 'Owner ~w reclaimed seat ~w~n', [Ident, Seat]),
+        (   game(GS)
+        ->  player_view(GS, Seat, View),
+            send_json(WS, View),
+            send_names(WS)
+        ;   broadcast_lobby
+        )
     ;   Token \== none, kicked_session(Token)
     ->  % Kicked by the admin: watch as a spectator until the next game.
         format(user_error, 'Kicked client reconnects as spectator~n', []),
@@ -486,6 +527,76 @@ spectator_join(WS) :-
     ;   retract(spectators(Specs)), assertz(spectators([WS | Specs]))
     ),
     send_names(WS).
+
+% ---------------------------------------------------------------------------
+% Persistent room mode: seats are owned by identity tokens, not sockets.
+% A disconnect never frees the seat; the owner reconnects with the same
+% token and picks up exactly where they left off. The game state is
+% saved to disk after every change and reloaded on startup.
+% ---------------------------------------------------------------------------
+
+% seat_owner(Seat, Token): this seat belongs to this identity token.
+:- dynamic seat_owner/2.
+
+% ws_ident(WS, Ident): the long-lived identity token this connection
+% presented (persistent mode only).
+:- dynamic ws_ident/2.
+
+% Save the room state to disk (persistent mode only). Called after every
+% game state change; the file is read back on startup. Must always
+% succeed: a failure here would kill the message handler thread (and
+% with it the connection). Sockets are NOT saved (meaningless after a
+% restart): instead the owner identity token and alias of each seat are
+% stored, and the seats are rebuilt as placeholders on load.
+save_room_state :-
+    \+ persistent_mode, !.
+save_room_state :-
+    catch((players(Players),
+           findall(Owner,
+                   (   nth0(Seat, Players, _),
+                       (   seat_owner(Seat, Owner) -> true ; Owner = none )
+                   ),
+                   Owners),
+           findall(Name,
+                   (   nth0(Seat, Players, WS),
+                       (   player_name(WS, Name) -> true ; Name = null )
+                   ),
+                   Names),
+           (   game(GS) -> true ; GS = none ),
+           open('room_state.pl', write, Stream),
+           write_term(Stream, room_state(Owners, Names, GS), [quoted(true)]),
+           write(Stream, '.\n'),
+           close(Stream)),
+          E, format(user_error, 'Room state save failed: ~q~n', [E])).
+
+% Load the room state from disk on startup (persistent mode only). The
+% seats are rebuilt as placeholder atoms (dead sockets): the owners
+% reclaim them on reconnect via their identity tokens.
+load_room_state :-
+    \+ persistent_mode, !.
+load_room_state :-
+    (   catch((open('room_state.pl', read, Stream),
+               read_term(Stream, room_state(Owners, Names, GS), []),
+               close(Stream)),
+              _, fail)
+    ->  length(Owners, N),
+        findall(WS,
+                (   between(1, N, I),
+                    atomic_list_concat(['persist_seat_', I], WS)
+                ),
+                Players),
+        retractall(players(_)), assertz(players(Players)),
+        forall((nth0(Seat, Owners, Owner), Owner \== none),
+               assertz(seat_owner(Seat, Owner))),
+        forall((nth0(Seat, Players, WS), nth0(Seat, Names, Name), Name \== null),
+               assertz(player_name(WS, Name))),
+        (   GS == none
+        ->  true    % no game was running: nothing to restore
+        ;   retractall(game(_)), assertz(game(GS))
+        ),
+        format(user_error, 'Persistent room state loaded: ~w seat(s)~n', [N])
+    ;   format(user_error, 'No persistent room state found (fresh room)~n', [])
+    ).
 
 % Lobby status: how many players are seated and how many more are needed.
 % Spectators get a spectator=true flag so the client can offer the
@@ -534,10 +645,13 @@ watchdog_loop :-
     watchdog_loop.
 
 drop_silent_clients :-
-    with_mutex(tienlen_game, silent_sockets(Silent)),
-    forall(member(WS, Silent),
-           thread_create((catch(ws_close(WS, 1001, 'heartbeat timeout'), _, true) -> true ; true),
-                         _, [detached(true)])).
+    (   persistent_mode
+    ->  true    % persistent rooms: silent sockets are fine (owners away)
+    ;   with_mutex(tienlen_game, silent_sockets(Silent)),
+        forall(member(WS, Silent),
+               thread_create((catch(ws_close(WS, 1001, 'heartbeat timeout'), _, true) -> true ; true),
+                             _, [detached(true)]))
+    ).
 
 silent_sockets(Silent) :-
     get_time(Now),
@@ -566,13 +680,24 @@ spectators([]).
 remove_client(WS) :-
     retractall(dead_socket(WS)),          % final removal: forget the marker
     retractall(ws_token(WS, _)),
+    retractall(ws_ident(WS, _)),
     retractall(player_name(WS, _)),
     retractall(last_seen(WS, _)),          % no heartbeat to track anymore
     retractall(seat_declined(_, WS)),     % their seat declinations are moot
     players(List),
     (   select(WS, List, Rest)
     ->  nth0(Seat, List, WS),
-        (   game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS)
+        (   persistent_mode
+        ->  % Persistent room: the seat is owned by an identity token,
+            % not the socket. A disconnect never frees it - the owner
+            % reconnects and picks up where they left off. The socket
+            % stays as a placeholder so seat indices stay stable.
+            format(user_error, 'Owner of seat ~w disconnected (seat kept)~n', [Seat]),
+            (   game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS)
+            ->  broadcast_event(grace_started, Seat)   % show "away" state
+            ;   true
+            )
+        ;   game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS)
         ->  % Mid-game departure: give the player a grace period to
             % reconnect (page refresh) before treating them as gone. The
             % socket stays as a seat placeholder meanwhile. Everyone sees
@@ -627,8 +752,10 @@ game_is_over_running :-
 :- dynamic grace_flaps/2.   % grace_flaps(Seat, Count)
 
 grace_timeout(Seat) :-
-    sleep(10),                       % reconnect window (page refresh)
-    with_mutex(tienlen_game,
+    (   persistent_mode
+    ->  true    % persistent rooms: the seat is owned, never released
+    ;   sleep(10),                       % reconnect window (page refresh)
+        with_mutex(tienlen_game,
                (   players(List),
                    (   nth0(Seat, List, Sock), \+ socket_alive(Sock),
                        game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS)
@@ -665,7 +792,9 @@ grace_timeout(Seat) :-
                            reap_dead_players
                        )
                    )
-               )).
+               )
+        )
+    ).
 
 % Remove every seated socket that is dead and has no live game to rejoin
 % (no game, the game is over, or the seat is not part of the running
@@ -673,17 +802,20 @@ grace_timeout(Seat) :-
 % network may not notice for minutes; without this sweep the lobby (and
 % the admin view) keeps counting zombies as seated players.
 reap_dead_players :-
-    players(Players),
-    findall(WS,
-            (   nth0(Seat, Players, WS),
-                \+ socket_alive(WS),
-                \+ ( game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS) )
-            ),
-            Dead),
-    (   Dead == []
-    ->  true
-    ;   format(user_error, 'Reaping ~w dead seat(s)~n', [Dead]),
-        forall(member(WS, Dead), remove_client(WS))
+    (   persistent_mode
+    ->  true    % persistent rooms: dead sockets are fine, owners return
+    ;   players(Players),
+        findall(WS,
+                (   nth0(Seat, Players, WS),
+                    \+ socket_alive(WS),
+                    \+ ( game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS) )
+                ),
+                Dead),
+        (   Dead == []
+        ->  true
+        ;   format(user_error, 'Reaping ~w dead seat(s)~n', [Dead]),
+            forall(member(WS, Dead), remove_client(WS))
+        )
     ).
 
 % Offer the freed seat to all waiting spectators: first to accept wins.
@@ -1058,6 +1190,15 @@ handle_join(WS) :-
                 % A human clicked: lift the kick ban and register the
                 % session so a page refresh reclaims this seat.
                 register_session(WS, N),
+                % Persistent room: the identity token now owns this seat
+                % (a disconnect will not free it).
+                (   persistent_mode,
+                    ws_ident(WS, Ident), Ident \== none
+                ->  retractall(seat_owner(_, Ident)),
+                    assertz(seat_owner(N, Ident)),
+                    save_room_state
+                ;   true
+                ),
                 format(user_error, 'Spectator joined as player ~w~n', [N]),
                 % Seat confirmation first, so the client knows its seat
                 % when the "joined" toast arrives (it labels the joiner).
@@ -1128,6 +1269,7 @@ handle_kick_all :-
     retractall(game(_)),
     retractall(left_seats(_)), assertz(left_seats([])),
     retractall(session(_, _)),
+    retractall(seat_owner(_, _)),
     retractall(previous_winner(_, _)), asserta(previous_winner(none, none)),
     retractall(dead_socket(_)),
     retractall(ws_token(_, _)),
@@ -1390,6 +1532,7 @@ exclude_at(Indices, List, Rest) :-
 update_game(GS) :-
     retractall(game(_)),
     asserta(game(GS)),
+    save_room_state,
     % Remember the winner so the next round is led by them (free choice)
     % instead of the forced 3♠ opening.
     (   GS = game_state(_, _, _, _, _, _, next_move(Winner, game_over))
@@ -1432,7 +1575,7 @@ player_view(GS, Seat, json(Pairs)) :-
     % button to spectators only while there is room).
     players(Players),
     length(Players, Seated),
-    append(Pairs0, [your_seat=Seat, seated=Seated], Pairs).
+    append(Pairs0, [your_seat=Seat, seated=Seated, persistent=persistent_mode], Pairs).
 
 hide_hands(game_state(Hands, PlayerStates, CIP, DC, A, SB, NM), Seat,
            game_state(ViewHands, PlayerStates, CIP, DC, A, SB, NM)) :-

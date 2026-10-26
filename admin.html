@@ -319,10 +319,14 @@
 
         function renderStatus(d) {
             const bar = document.getElementById('statusbar');
+            const awayLabel = d.persistent ? 'away' : 'disconnected';
             let html = '<span class=chip>Players: ' + d.seated + '</span>' +
                 '<span class=chip>Spectators: ' + d.spectators + '</span>';
+            if (d.persistent) {
+                html += '<span class="chip turn">Persistent room</span>';
+            }
             if (d.disconnected && d.disconnected.length) {
-                html += '<span class="chip danger">Disconnected: ' +
+                html += '<span class="chip danger">' + awayLabel.charAt(0).toUpperCase() + awayLabel.slice(1) + ': ' +
                     d.disconnected.map(s => 'P' + (s + 1)).join(', ') + '</span>';
             }
             if (d.game.running) {
@@ -366,7 +370,7 @@
                     const name = names[i] || ('Player ' + (i + 1));
                     const dead = d.disconnected && d.disconnected.includes(i);
                     html += '<div class=player-row><span class=name>' + name +
-                        (dead ? ' <span class=chip>disconnected</span>' : '') +
+                        (dead ? ' <span class=chip>' + (d.persistent ? 'away' : 'disconnected') + '</span>' : '') +
                         '</span><span class=count>' + cards + '</span>' +
                         '<button class="danger small" onclick="kickOne(' + i + ')">Kick</button></div>';
                 }
