@@ -1,0 +1,45 @@
+# systemd service for the TienLen PERSISTENT room (long-running games).
+# Install on your webserver alongside tienlen.service:
+#   sudo cp tienlen-persistent.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now tienlen-persistent
+#
+# Served under its own path (TIENLEN_BASE_PATH): proxy e.g.
+#   location /tienlen/family/ { proxy_pass http://127.0.0.1:8081; ... }
+# and connect at https://vushu.dk/tienlen/family/
+#
+# Seats are owned by identity tokens (localStorage in the browser):
+# disconnects never free a seat, and the game state survives server
+# restarts (saved to room_state.pl in the working directory after
+# every move). Admin kick frees a seat and clears its ownership.
+
+[Unit]
+Description=TienLen persistent card game server
+After=network.target
+
+[Service]
+Type=simple
+# Same checkout as the live room; only this instance writes room_state.pl.
+WorkingDirectory=/opt/tienlen
+ExecStart=/usr/bin/swipl server.pl -g serve -- --port=8081
+Restart=on-failure
+RestartSec=3
+
+User=tienlen
+Group=tienlen
+
+# Its own room code (who may join) and admin key.
+Environment=TIENLEN_ROOM_CODE=change-me-family
+Environment=TIENLEN_ADMIN_KEY=change-me-too
+# Persistent mode: token-owned seats, state saved to disk.
+Environment=TIENLEN_PERSISTENT=1
+# Serve under a subpath so it can share the domain with the live room.
+Environment=TIENLEN_BASE_PATH=/tienlen/family
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/tienlen
+
+[Install]
+WantedBy=multi-user.target
