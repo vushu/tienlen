@@ -59,6 +59,11 @@
             border-color: rgba(125, 255, 168, 0.5);
         }
 
+        .chip.danger {
+            color: #ff8f8f;
+            border-color: rgba(255, 143, 143, 0.5);
+        }
+
         .chip.over {
             color: #f1c40f;
             border-color: rgba(241, 196, 15, 0.5);
@@ -316,6 +321,10 @@
             const bar = document.getElementById('statusbar');
             let html = '<span class=chip>Players: ' + d.seated + '</span>' +
                 '<span class=chip>Spectators: ' + d.spectators + '</span>';
+            if (d.disconnected && d.disconnected.length) {
+                html += '<span class="chip danger">Disconnected: ' +
+                    d.disconnected.map(s => 'P' + (s + 1)).join(', ') + '</span>';
+            }
             if (d.game.running) {
                 html += '<span class="chip turn">Turn: Player ' + (d.game.turn + 1) + ' (' + d.game.action + ')</span>';
             } else {
@@ -355,7 +364,9 @@
                     const cards = d.game.running && d.game.hand_counts[i] !== undefined
                         ? d.game.hand_counts[i] + ' cards' : 'seated';
                     const name = names[i] || ('Player ' + (i + 1));
+                    const dead = d.disconnected && d.disconnected.includes(i);
                     html += '<div class=player-row><span class=name>' + name +
+                        (dead ? ' <span class=chip>disconnected</span>' : '') +
                         '</span><span class=count>' + cards + '</span>' +
                         '<button class="danger small" onclick="kickOne(' + i + ')">Kick</button></div>';
                 }

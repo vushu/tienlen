@@ -254,6 +254,11 @@ handle_admin_status(Request) :-
         length(Players, N),
         spectators(Specs),
         length(Specs, S),
+        % How many seats hold a dead socket (disconnected, in grace)?
+        % The admin should see them as such, not as seated players.
+        findall(Seat,
+                (   nth0(Seat, Players, WS), \+ socket_alive(WS) ),
+                DeadSeats),
         findall(Entry, roster_entry(Entry), Roster),
         (   game(GS)
         ->  GS = game_state(Hands, PlayerStates, CIP, _DC, _A, SB, next_move(P, Action)),
@@ -267,7 +272,8 @@ handle_admin_status(Request) :-
             ),
             Game = _{running:false, scoreboard:SB}
         ),
-        reply_json_dict(_{seated:N, spectators:S, game:Game, names:Roster})
+        reply_json_dict(_{seated:N, spectators:S, game:Game, names:Roster,
+                          disconnected:DeadSeats})
     ;   reply_json_dict(_{error:unauthorized}, [status(401)])
     ).
 
@@ -582,6 +588,10 @@ remove_client(WS) :-
                 % game-over screen with nobody to play with.
                 format(user_error, 'Game over, ~w player(s) left: back to lobby~n', [N]),
                 retractall(game(_)),
+                % The seats compacted: any recorded departed seats are
+                % stale (their indices shifted), and a stale entry would
+                % prune a live player at the next game start.
+                retractall(left_seats(_)), assertz(left_seats([])),
                 broadcast_lobby
             ;   game(_)
             ->  true                        % mid-game views update via events
@@ -645,10 +655,36 @@ grace_timeout(Seat) :-
                                retractall(grace_flaps(Seat, _))
                            ;   true
                            )
-                       ;   true    % game over or seat gone: nothing to do
+                       ;   % Dead socket with no live game to rejoin (the
+                           % game ended meanwhile, or the seat is outside
+                           % the game): release the seat now instead of
+                           % waiting for the network to notice the dead
+                           % connection. Sweep every such zombie at once -
+                           % removing one-by-one would shift seat indices
+                           % under the other pending grace timers.
+                           reap_dead_players
                        )
                    )
                )).
+
+% Remove every seated socket that is dead and has no live game to rejoin
+% (no game, the game is over, or the seat is not part of the running
+% game). A phone in standby leaves a half-open TCP connection that the
+% network may not notice for minutes; without this sweep the lobby (and
+% the admin view) keeps counting zombies as seated players.
+reap_dead_players :-
+    players(Players),
+    findall(WS,
+            (   nth0(Seat, Players, WS),
+                \+ socket_alive(WS),
+                \+ ( game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS) )
+            ),
+            Dead),
+    (   Dead == []
+    ->  true
+    ;   format(user_error, 'Reaping ~w dead seat(s)~n', [Dead]),
+        forall(member(WS, Dead), remove_client(WS))
+    ).
 
 % Offer the freed seat to all waiting spectators: first to accept wins.
 % (A single targeted offer can be lost to a stale socket; broadcasting
@@ -1326,15 +1362,21 @@ start_new_game :-
 
 % Remove departed players' socket placeholders so the next game is dealt
 % for the connected players only (seats re-align to connection order).
+% Only seats whose socket is actually dead are pruned: a stale left_seats
+% entry (e.g. left over from a previous game) must not drop a live player.
 prune_left_seats :-
     left_seats(Left),
     (   Left == []
     ->  true
     ;   players(Players),
-        exclude_at(Left, Players, Remaining),
-        retractall(players(_)), assertz(players(Remaining)),
-        retractall(left_seats(_)), assertz(left_seats([])),
-        format(user_error, 'Pruned ~w departed seat(s)~n', [Left])
+        include([Seat]>>(nth0(Seat, Players, WS), \+ socket_alive(WS)), Left, Dead),
+        (   Dead == []
+        ->  true    % nothing to prune (entries were stale)
+        ;   exclude_at(Dead, Players, Remaining),
+            retractall(players(_)), assertz(players(Remaining)),
+            format(user_error, 'Pruned ~w departed seat(s)~n', [Dead])
+        ),
+        retractall(left_seats(_)), assertz(left_seats([]))
     ).
 
 % Remove the given 0-based indices from a list (sorted descending so each
