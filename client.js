@@ -112,6 +112,7 @@ function connectSocket() {
 
     socket.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        if (data.type === 'pong') return;   // heartbeat reply: nothing to do
         if (data.type === 'error') {
             console.warn('Server error:', data.message);
             // Name rejected (empty): re-prompt and retry. Duplicates are

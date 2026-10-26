@@ -147,7 +147,6 @@ authorized_admin(Request) :-
 
 start :-
     register_routes,
-    start_watchdog,
     % Listen on IPv6 any first (on macOS it accepts v4-mapped connections
     % too), falling back to plain IPv4. This keeps the server reachable
     % from same-Wi-Fi devices via link-local IPv6 even when a corporate
@@ -213,7 +212,6 @@ register_one(Prefix, Path, Handler, Options) :-
 
 serve :-
     register_routes,
-    start_watchdog,
     (   room_code(C), C == none
     ->  format(user_error, 'Room code: DISABLED (anyone can join)~n', [])
     ;   format(user_error, 'Room code: enabled~n', [])
@@ -432,8 +430,11 @@ seat_client(WS, Token) :-
     ;   true
     ),
     % Fresh connection: stamp the heartbeat clock so the watchdog does
-    % not drop them before their first message.
+    % not drop them before their first message, and make sure the
+    % watchdog is running (it must start after the daemon fork, so it
+    % is created lazily on the first connection).
     catch((get_time(T), retractall(last_seen(WS, _)), assertz(last_seen(WS, T))), _, true),
+    catch(start_watchdog, _, true),
     players(List),
     (   memberchk(WS, List) -> true    % already seated (shouldn't happen)
     ;   Token \== none, kicked_session(Token)
@@ -529,7 +530,7 @@ watchdog_loop :-
 drop_silent_clients :-
     with_mutex(tienlen_game, silent_sockets(Silent)),
     forall(member(WS, Silent),
-           thread_create(catch(ws_close(WS, 1001, 'heartbeat timeout'), _, true),
+           thread_create((catch(ws_close(WS, 1001, 'heartbeat timeout'), _, true) -> true ; true),
                          _, [detached(true)])).
 
 silent_sockets(Silent) :-
