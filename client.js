@@ -97,6 +97,13 @@ function connectSocket() {
     socket.onopen = () => {
         console.log('Connected to WebSocket server');
         setConnectionStatus(true);
+        // Heartbeat: prove the tab is alive while the phone sleeps. A
+        // frozen page stops sending, and the server drops silent
+        // sockets after a few missed beats - so a locked phone does
+        // not leave a zombie seat blocking the game. On wake the
+        // browser fires visibilitychange before the interval would:
+        // beat immediately so a quick standby does not disconnect us.
+        startHeartbeat();
         // Send our alias (stored per tab session) so the server can
         // validate it (unique, <= 12 chars) and tell everyone.
         const name = sessionStorage.getItem('tienlen_name');
@@ -261,6 +268,7 @@ function connectSocket() {
     socket.onclose = (event) => {
         console.log('WebSocket connection closed', event.code);
         setConnectionStatus(false);
+        stopHeartbeat();
         // Auto-reconnect so a server kick lands us back in the lobby.
         // Before retrying, probe the stored room code over HTTP: a stale
         // code would otherwise fail the WebSocket handshake invisibly
@@ -276,6 +284,37 @@ function connectSocket() {
             connectSocket();
         }, 1000);
     };
+}
+
+// Heartbeat: a small ping every 20s proves this tab is alive. The
+// server drops sockets that stay silent too long, so a phone in
+// standby (frozen JS, half-open TCP) does not hold a seat hostage.
+// On visibility change (phone unlocked) beat immediately: the
+// interval was frozen during standby and the socket may be stale.
+let heartbeatTimer = null;
+
+function startHeartbeat() {
+    stopHeartbeat();
+    heartbeatTimer = setInterval(() => {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: 'ping' }));
+        }
+    }, 20000);
+    // Beat as soon as the tab becomes visible again (phone unlocked,
+    // tab switched back): the interval was frozen while hidden.
+    document.addEventListener('visibilitychange', beatOnVisible);
+}
+
+function stopHeartbeat() {
+    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+    document.removeEventListener('visibilitychange', beatOnVisible);
+}
+
+function beatOnVisible() {
+    if (document.visibilityState === 'visible'
+        && socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'ping' }));
+    }
 }
 
 // The display label for a seat: the player's alias if set, else

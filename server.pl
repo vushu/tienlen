@@ -147,6 +147,7 @@ authorized_admin(Request) :-
 
 start :-
     register_routes,
+    start_watchdog,
     % Listen on IPv6 any first (on macOS it accepts v4-mapped connections
     % too), falling back to plain IPv4. This keeps the server reachable
     % from same-Wi-Fi devices via link-local IPv6 even when a corporate
@@ -212,6 +213,7 @@ register_one(Prefix, Path, Handler, Options) :-
 
 serve :-
     register_routes,
+    start_watchdog,
     (   room_code(C), C == none
     ->  format(user_error, 'Room code: DISABLED (anyone can join)~n', [])
     ;   format(user_error, 'Room code: enabled~n', [])
@@ -429,6 +431,9 @@ seat_client(WS, Token) :-
     ->  assertz(ws_token(WS, Token))
     ;   true
     ),
+    % Fresh connection: stamp the heartbeat clock so the watchdog does
+    % not drop them before their first message.
+    catch((get_time(T), retractall(last_seen(WS, _)), assertz(last_seen(WS, T))), _, true),
     players(List),
     (   memberchk(WS, List) -> true    % already seated (shouldn't happen)
     ;   Token \== none, kicked_session(Token)
@@ -493,6 +498,59 @@ broadcast_lobby :-
 :- dynamic left_seats/1.
 left_seats([]).
 
+% Last time each connected socket proved it is alive (any message, or
+% the client's heartbeat ping). The watchdog drops sockets that stay
+% silent past the window: a phone in standby freezes the page while
+% the OS keeps the TCP connection half-open, so no close frame ever
+% arrives and the game would otherwise wait forever for a zombie seat.
+:- dynamic last_seen/2.   % last_seen(WS, Time)
+
+% Drop clients whose heartbeat has been silent past the window (the
+% client beats every 20s; 75s means three missed beats). Removal runs
+% under the game mutex; the socket close happens in its own thread
+% because the close handshake can block on a half-open connection.
+% Started lazily on the first connection: daemon mode forks inside
+% http_daemon/0, which silently discards threads created before it.
+start_watchdog :-
+    (   watchdog_running
+    ->  true
+    ;   asserta(watchdog_running),
+        thread_create(watchdog_loop, _, [detached(true)])
+    ).
+
+:- dynamic watchdog_running/0.
+
+watchdog_loop :-
+    sleep(30),
+    catch(drop_silent_clients, E,
+          format(user_error, 'Watchdog error: ~q~n', [E])),
+    watchdog_loop.
+
+drop_silent_clients :-
+    with_mutex(tienlen_game, silent_sockets(Silent)),
+    forall(member(WS, Silent),
+           thread_create(catch(ws_close(WS, 1001, 'heartbeat timeout'), _, true),
+                         _, [detached(true)])).
+
+silent_sockets(Silent) :-
+    get_time(Now),
+    findall(WS,
+            (   last_seen(WS, T),
+                Now - T > 75,
+                connected_socket(WS)
+            ),
+            Silent),
+    (   Silent == []
+    ->  true
+    ;   format(user_error, 'Watchdog dropping ~w silent socket(s)~n', [Silent]),
+        forall(member(WS, Silent), remove_client(WS))
+    ).
+
+connected_socket(WS) :-
+    players(Players), member(WS, Players).
+connected_socket(WS) :-
+    spectators(Specs), member(WS, Specs).
+
 % Spectators: connections beyond the 4 seats. They watch the game and are
 % promoted into a seat when a player departs.
 :- dynamic spectators/1.
@@ -502,6 +560,7 @@ remove_client(WS) :-
     retractall(dead_socket(WS)),          % final removal: forget the marker
     retractall(ws_token(WS, _)),
     retractall(player_name(WS, _)),
+    retractall(last_seen(WS, _)),          % no heartbeat to track anymore
     retractall(seat_declined(_, WS)),     % their seat declinations are moot
     players(List),
     (   select(WS, List, Rest)
@@ -834,8 +893,13 @@ handle_message(WS, Data) :-
     ->  handle_set_name(WS, Dict.name)
     ;   Dict.type == start_over
     ->  handle_start_over(WS)
+    ;   Dict.type == ping
+    ->  send_json(WS, json([type=pong]))   % heartbeat reply
     ;   send_json(WS, json([type=error, message=unknown_message]))
-    ).
+    ),
+    % Any message proves the client is alive: stamp it. The watchdog
+    % drops sockets that stay silent past the heartbeat window.
+    catch((get_time(T), retractall(last_seen(WS, _)), assertz(last_seen(WS, T))), _, true).
 
 % ---------------------------------------------------------------------------
 % Player aliases
