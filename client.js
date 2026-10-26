@@ -286,28 +286,53 @@ function seatLabel(seat) {
     return `Player ${seat + 1}`;
 }
 
-// Spectator indication: a badge in the header ("Spectating") plus a
-// "Join game" button (in the lobby it seats immediately; during a game
-// the joiner is dealt in at the next game, or takes an open departed
-// seat). Hidden once seated.
+// Spectator indication: a badge in the header plus a "Join game"
+// button (in the lobby it seats immediately; during a game the joiner
+// is dealt in at the next game, or takes an open departed seat).
+// A mid-game joiner is seated but has no hand yet: they keep a badge
+// ("Waiting for next round") until the next game deals them in.
 function renderSpectatorUI() {
     const badge = document.getElementById('spectator-badge');
-    if (badge) badge.hidden = !amSpectator;
+    const inGame = receivedData && receivedData.hands;
+    // Seated but not dealt into the running game (joined mid-game):
+    // still watching, but the seat is secured for the next round.
+    const waitingForRound = !amSpectator && inGame
+        && receivedData.your_seat >= 0
+        && !Array.isArray(receivedData.hands[receivedData.your_seat]);
+    if (badge) {
+        badge.hidden = !amSpectator && !waitingForRound;
+        badge.textContent = waitingForRound
+            ? 'Spectating — joining next round'
+            : 'Spectating';
+    }
     const joinBtn = document.getElementById('join-game-btn');
     if (!amSpectator) {
         joinBtn?.remove();
         return;
     }
-    const inGame = receivedData && receivedData.hands;
     if (inGame) {
         // The server validates: an open (departed) seat is taken, a
         // full lobby is rejected with a clear error.
         if (!joinBtn) showJoinLobbyButton();
+        else updateJoinButtonLabel();
     } else if (lobbySeated !== null && lobbySeated < 4) {
         if (!joinBtn) showJoinLobbyButton();
     } else {
         joinBtn?.remove();
     }
+}
+
+// Keep the join button's label in sync with the game state: created in
+// the lobby ("Join as player"), relabeled once a game is running
+// ("Join next game" - the joiner is dealt in at the next game).
+function updateJoinButtonLabel() {
+    const btn = document.getElementById('join-game-btn');
+    if (!btn) return;
+    const inGame = receivedData && receivedData.hands;
+    btn.textContent = inGame ? 'Join next game' : 'Join as player';
+    btn.title = inGame
+        ? 'Take a seat; you are dealt in when the next game starts'
+        : 'Take a seat and play; otherwise you watch as a spectator';
 }
 
 // Show our own alias next to the title, with a click-to-change control.
