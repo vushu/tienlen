@@ -86,9 +86,6 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            /* The status block (badge + turn info) floats right in the
-               header, opposite the title. */
-            margin-left: auto;
         }
 
         #player-turn {
@@ -966,6 +963,10 @@
         .log-entry .what {
             opacity: 0.85;
             word-break: break-word;
+            /* The action (played X / passed) floats right, opposite
+               the player name. */
+            margin-left: auto;
+            text-align: right;
         }
 
         .log-entry.bomb .who,
