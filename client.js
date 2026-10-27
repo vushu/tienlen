@@ -796,7 +796,20 @@ function renderGameOver(data) {
                 `<span class="round-item${seat === data.your_seat ? ' you' : ''}">${ordinal(placeOrder(place))}: ${seatLabel(seat)}</span>`);
             return `<div class="round-row"><span class="round-label">R${i + 1}</span>${items.join('')}</div>`;
         });
-        history = `<div class="round-history">${rounds.join('')}</div>`;
+        // Win tally: 1st places per player across all rounds.
+        const wins = {};
+        data.scoreboard.forEach(round =>
+            round.forEach((place, seat) => {
+                if (place === 'first') wins[seat] = (wins[seat] || 0) + 1;
+            }));
+        const tally = Object.entries(wins)
+            .sort((a, b) => b[1] - a[1])
+            .map(([seat, count]) =>
+                `<span class="round-item${Number(seat) === data.your_seat ? ' you' : ''}">` +
+                `${seatLabel(Number(seat))}: ${count}</span>`)
+            .join('');
+        history = `<div class="win-tally">${tally}</div>` +
+            `<div class="round-history">${rounds.join('')}</div>`;
     }
     banner.innerHTML = `<h2>Game over!</h2><div class="placements">${rows.join('')}</div>${history}` +
         (amSpectator ? '' :

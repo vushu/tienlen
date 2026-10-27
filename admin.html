@@ -233,6 +233,20 @@
             background: rgba(255, 255, 255, 0.08);
         }
 
+        .win-tally {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 6px 0;
+            font-weight: 700;
+        }
+
+        .win-tally .win {
+            color: #f1c40f;
+            background: rgba(241, 196, 15, 0.1);
+            border: 1px solid rgba(241, 196, 15, 0.35);
+        }
+
         .actions {
             margin-top: 18px;
             display: flex;
@@ -483,6 +497,17 @@
             (d.names || []).forEach(e => { names[e.seat] = e.name; });
             const label = seat => names[seat] || ('P' + (seat + 1));
             let html = '<h2>Scoreboard</h2>';
+            // Win tally: 1st places per player across all rounds.
+            const wins = {};
+            sb.forEach(round => round.forEach((place, seat) => {
+                if (place === 'first') wins[seat] = (wins[seat] || 0) + 1;
+            }));
+            html += '<div class=win-tally>' +
+                Object.entries(wins).sort((a, b) => b[1] - a[1])
+                    .map(([seat, count]) =>
+                        '<span class="round-item win">' + label(Number(seat)) + ': ' + count + '</span>')
+                    .join('') +
+                '</div>';
             sb.forEach((round, i) => {
                 html += '<div class=round-row><span class=round-label>R' + (i + 1) + '</span>';
                 round.forEach((place, seat) => {
