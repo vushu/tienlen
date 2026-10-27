@@ -455,15 +455,24 @@ handle_kick_one(seat, Seat) :-
         ->  retractall(kicked_session(Token)), assertz(kicked_session(Token))
         ;   true
         ),
-        % Persistent room: the kick frees the seat and clears the
-        % ownership, so the next connection of that identity is a
-        % spectator again (the admin's escape hatch for stuck seats).
+        % Persistent room: the kick is the admin's explicit "this seat
+        % is gone" - remove it from the lobby entirely (a plain
+        % disconnect keeps the seat for the owner to reclaim, but a
+        % kick must not). Clear the ownership, drop the seat from the
+        % players list, and take the player out of a running game.
         (   persistent_mode
         ->  retractall(seat_owner(Seat, _)),
+            retractall(player_name(WS, _)),
+            (   game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS)
+            ->  handle_player_left(Seat, GS)
+            ;   true
+            ),
+            select(WS, Players, Rest),
+            retractall(players(_)), assertz(players(Rest)),
+            broadcast_lobby,
             save_room_state
-        ;   true
-        ),
-        catch(ws_close(WS, 1000, 'kicked'), _, true)
+        ;   catch(ws_close(WS, 1000, 'kicked'), _, true)
+        )
     ;   format(user_error, 'ADMIN KICK: no such seat ~w~n', [Seat])
     ).
 handle_kick_one(spec, Seat) :-
