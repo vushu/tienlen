@@ -3,8 +3,13 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>TienLen admin</title>
+    <!-- Home-screen app support: standalone launch with a translucent
+         status bar, same as the player page. -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <style>
         * {
             box-sizing: border-box;
@@ -13,14 +18,38 @@
         body {
             margin: 0;
             min-height: 100vh;
-            padding: 20px;
+            /* Notched devices: the page extends under the status bar;
+               keep the content below it. --sat is set by the inline
+               script below as a reliable fallback when env() lies
+               (iOS standalone bug); 0px default = no notch. */
+            padding: max(env(safe-area-inset-top), var(--sat, 0px), 8px)
+                env(safe-area-inset-right)
+                env(safe-area-inset-bottom)
+                env(safe-area-inset-left);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             color: #ecf0f1;
             background: radial-gradient(ellipse at top, #1d6f42 0%, #14532d 55%, #0c3a1e 100%);
         }
 
+        /* Sticky top bar, same as the player page: when the page
+           scrolls, content must not slide under the translucent
+           status bar - the bar covers it and stays below the notch. */
+        header {
+            position: sticky;
+            top: max(env(safe-area-inset-top), var(--sat, 0px));
+            z-index: 10;
+            padding: 10px 20px;
+            background: rgba(6, 26, 15, 0.85);
+            backdrop-filter: blur(4px);
+            border-bottom: 2px solid rgba(255, 255, 255, 0.12);
+        }
+
+        main {
+            padding: 16px 20px 20px;
+        }
+
         h1 {
-            margin: 0 0 16px;
+            margin: 0;
             letter-spacing: 1px;
         }
 
@@ -228,13 +257,16 @@
 
         /* ---------- Responsive: phones ---------- */
         @media (max-width: 640px) {
-            body {
-                padding: 12px;
+            header {
+                padding: 8px 12px;
+            }
+
+            main {
+                padding: 12px 12px 12px;
             }
 
             h1 {
                 font-size: 1.2em;
-                margin-bottom: 10px;
             }
 
             section {
@@ -295,16 +327,50 @@
 </head>
 
 <body>
-    <h1>♠ Tiến Lên — admin</h1>
-    <div id="statusbar"></div>
-    <section id="gamestate"></section>
-    <section id="roster"></section>
-    <section id="scoreboard"></section>
-    <div class="actions">
-        <button id="restart" onclick="restartGame()">Restart Game</button>
-        <button id="kick" class="danger" onclick="kickAll()">Kick All Players</button>
-    </div>
-    <p id="feedback"></p>
+    <header>
+        <h1>♠ Tiến Lên — admin</h1>
+    </header>
+    <main>
+        <div id="statusbar"></div>
+        <section id="gamestate"></section>
+        <section id="roster"></section>
+        <section id="scoreboard"></section>
+        <div class="actions">
+            <button id="restart" onclick="restartGame()">Restart Game</button>
+            <button id="kick" class="danger" onclick="kickAll()">Kick All Players</button>
+        </div>
+        <p id="feedback"></p>
+    </main>
+
+    <script>
+        // Same iOS standalone fix as client.js (this page does not load
+        // it): env(safe-area-inset-top) often reports 0 in standalone
+        // mode, so measure the visual viewport offset and use it as a
+        // CSS-variable floor for the body padding.
+        (function fixSafeArea() {
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+                || window.navigator.standalone === true;
+            if (!isStandalone) return;
+            const apply = () => {
+                const inset = window.visualViewport
+                    ? Math.round(window.visualViewport.offsetTop)
+                    : 0;
+                let sat = inset;
+                if (sat < 20) {
+                    const probe = document.createElement('div');
+                    probe.style.cssText =
+                        'position:fixed;top:0;height:env(safe-area-inset-top);visibility:hidden;pointer-events:none;';
+                    document.body.appendChild(probe);
+                    sat = probe.getBoundingClientRect().height;
+                    probe.remove();
+                }
+                if (sat < 20) sat = 47;   // typical notch height
+                document.documentElement.style.setProperty('--sat', sat + 'px');
+            };
+            apply();
+            window.addEventListener('orientationchange', () => setTimeout(apply, 300));
+        })();
+    </script>
 
     <script>
         const SUITS = { hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' };
