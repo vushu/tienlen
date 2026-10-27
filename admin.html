@@ -168,6 +168,12 @@
             font-weight: 600;
         }
 
+        /* The away badge sits in its own column after the name, so all
+           badges align vertically regardless of name length. */
+        .player-row .away-badge {
+            flex-shrink: 0;
+        }
+
         .player-row .count {
             color: rgba(236, 240, 241, 0.7);
             font-size: 0.85em;
@@ -644,9 +650,9 @@
                         ? d.game.hand_counts[i] + ' cards' : '';
                     const name = names[i] || ('Player ' + (i + 1));
                     const dead = d.disconnected && d.disconnected.includes(i);
-                    html += '<div class=player-row><span class=name>' + name +
-                        (dead ? ' <span class="away-badge">' + (d.persistent ? 'away' : 'disconnected') + '</span>' : '') +
-                        '</span><span class=count>' + cards + '</span>' +
+                    html += '<div class=player-row><span class=name>' + name + '</span>' +
+                        (dead ? '<span class="away-badge">' + (d.persistent ? 'away' : 'disconnected') + '</span>' : '') +
+                        '<span class=count>' + cards + '</span>' +
                         '<button class="danger small" onclick="kickOne(' + i + ')">Kick</button></div>';
                 }
             }
