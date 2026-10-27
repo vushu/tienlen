@@ -65,20 +65,22 @@ function rememberRoomCode(code) {
     document.cookie = 'tienlen_room=' + encodeURIComponent(code)
         + ';path=' + location.pathname.replace(/\/[^/]*$/, '/')
         + ';max-age=31536000;SameSite=Strict';
+    // Reflect the code in the URL (?code=...): the address bar then
+    // doubles as a shareable link, and a refresh keeps the code.
+    const params = new URLSearchParams(location.search);
+    params.set('code', code);
+    history.replaceState(null, '', location.pathname + '?' + params.toString());
 }
 
 // Room code from the URL query (?code=): shareable links like
 // https://host/tienlen/family/?code=tu4u (same style as the admin
-// page's ?key=). The code is stored and the query is stripped from
-// the address bar so it does not linger in history.
+// page's ?key=). The code is stored; it stays in the URL so the
+// address bar is a shareable link and refreshes keep the code.
 function roomCodeFromUrl() {
     const params = new URLSearchParams(location.search);
     const code = (params.get('code') || '').trim();
     if (code) {
         rememberRoomCode(code);
-        params.delete('code');
-        const qs = params.toString();
-        history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
         return true;
     }
     return false;
