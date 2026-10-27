@@ -463,6 +463,15 @@ extended_double_sequence(PreviousRank,[card(R1, S1), card(R1, S2) | T], [card(R1
     next(PreviousRank, R1),
     extended_double_sequence(R1,T, MoreSequence, Remaining).
 
+% A leftover card of the previous rank blocks the sorted-list scan:
+% e.g. 5 5 6 6 7 7 7 8 8 - after taking the 7-pair, the next card is
+% a THIRD 7, not the 8-pair, and the extension would die. Skip the
+% single leftover (a pair of leftovers would itself be the next pair
+% of the run, handled by the clause above only when ranks continue).
+extended_double_sequence(PreviousRank,[card(R1, _) | T], MoreSequence, Remaining) :-
+    R1 == PreviousRank,
+    extended_double_sequence(PreviousRank, T, MoreSequence, Remaining).
+
 extended_double_sequence(_,Remaining, [], Remaining).
 
 get_pairs_from_hand(Cards, Result) :-
@@ -809,6 +818,21 @@ test(possible_to_beat_with_hand_double_sequence) :-
     get_double_sequence_predefined_hand(Hand),
     sort_by_score(Hand, SortedHand),
     possible_to_beat_with_hand(SortedHand, double_sequence([card(9,spades),card(9,diamonds),card(10,hearts),card(10,clubs),card(j,spades),card(j,diamonds)])).
+
+% Regression (same bug class as the sequence one): a triplicate rank
+% between pairs must not block double-sequence extension. Hand
+% 5 5 6 6 7 7 7 8 8 contains the double sequence 5-5-6-6-7-7-8-8,
+% but the sorted-list scan used to stop at the third 7 and never
+% reach the 8-pair, wrongly forcing a pass.
+test(possible_to_beat_with_hand_double_sequence_past_triplicates) :-
+    possible_to_beat_with_hand([card(5,spades), card(5,hearts),
+                                 card(6,spades), card(6,hearts),
+                                 card(7,spades), card(7,hearts), card(7,diamonds),
+                                 card(8,spades), card(8,hearts)],
+                                double_sequence([card(3,spades), card(3,hearts),
+                                                 card(4,spades), card(4,hearts),
+                                                 card(5,clubs), card(5,diamonds),
+                                                 card(6,clubs), card(6,diamonds)])).
 
 test(possible_to_beat_with_hand_single_2, [fail]) :-
     get_predefined_hands(P1, _, _, _), % Highest card is 2 of diamonds
