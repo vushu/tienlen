@@ -1684,6 +1684,14 @@ start_new_game :-
         format(user_error, 'Winner ~w leads the new round~n', [Winner]),
         update_game(NewGS)
     ;   settle(GS, SettledGS),
+        % The forced 3♠ opening is auto-played by the settle (it never
+        % passes through handle_move, so it was never logged). Log it
+        % here: a fresh opening shows as a single card with the opener
+        % as attacker and an empty discard pile.
+        (   SettledGS = game_state(_, _, single(card(OpeningRank, OpeningSuit)), [], Opener, _, _)
+        ->  log_move(Opener, place, [json([rank=OpeningRank, suit=OpeningSuit])], false)
+        ;   true
+        ),
         update_game(SettledGS)
     ),
     % The winner-lead is consumed: the next deal starts fresh unless a
