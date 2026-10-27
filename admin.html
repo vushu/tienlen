@@ -582,15 +582,10 @@
 
         function renderStatus(d) {
             const bar = document.getElementById('statusbar');
-            const awayLabel = d.persistent ? 'away' : 'disconnected';
             let html = '<span class=chip>Players: ' + d.seated + '</span>' +
                 '<span class=chip>Spectators: ' + d.spectators + '</span>';
             if (d.persistent) {
                 html += '<span class="chip turn">Persistent room</span>';
-            }
-            if (d.disconnected && d.disconnected.length) {
-                html += '<span class="away-badge">' + awayLabel.charAt(0).toUpperCase() + awayLabel.slice(1) + ': ' +
-                    d.disconnected.map(s => 'P' + (s + 1)).join(', ') + '</span>';
             }
             if (d.game.running) {
                 html += '<span class="chip turn">Turn: Player ' + (d.game.turn + 1) + ' (' + d.game.action + ')</span>';
