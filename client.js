@@ -49,6 +49,23 @@ function askRoomCode() {
     return sessionStorage.getItem('tienlen_room');
 }
 
+// Room code from the URL fragment (#code): shareable links like
+// https://host/tienlen/family/#tu4u. The fragment never reaches the
+// server (no logs, no Referer leak), so this is as safe as the code
+// being in the link itself. The code is stored and the fragment is
+// stripped from the address bar so it does not linger in history.
+function roomCodeFromUrl() {
+    if (location.hash.length > 1) {
+        const code = decodeURIComponent(location.hash.slice(1)).trim();
+        if (code) {
+            sessionStorage.setItem('tienlen_room', code);
+            history.replaceState(null, '', location.pathname + location.search);
+            return true;
+        }
+    }
+    return false;
+}
+
 // Probe the stored room code over plain HTTP: a WebSocket handshake
 // failure is invisible to browsers (no error message, just close code
 // 1006), but fetch() sees the 401 reliably. Returns true when the code
@@ -73,10 +90,11 @@ function connectSocket() {
     }
     const token = sessionStorage.getItem('tienlen_token');
     // Room code (if the server requires one): remembered per tab session.
-    // Ask BEFORE the first connection: a 401 rejection mid-handshake makes
-    // browsers treat it as failed HTTP authentication and aborts the
-    // WebSocket entirely (no retry), so we cannot recover after the fact.
-    if (!sessionStorage.getItem('tienlen_room') && !window.__roomAsked) {
+    // A #code URL fragment counts as having entered it. Ask BEFORE the
+    // first connection: a 401 rejection mid-handshake makes browsers
+    // treat it as failed HTTP authentication and aborts the WebSocket
+    // entirely (no retry), so we cannot recover after the fact.
+    if (!sessionStorage.getItem('tienlen_room') && !roomCodeFromUrl() && !window.__roomAsked) {
         window.__roomAsked = true;
         askRoomCode();
     }
