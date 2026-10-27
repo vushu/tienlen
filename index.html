@@ -34,12 +34,26 @@
             padding-bottom: env(safe-area-inset-bottom);
         }
 
-        /* iOS standalone bug: env(safe-area-inset-top) reports 0 in
-           home-screen apps on some versions, so the header slides under
-           the status bar. The client detects this (fixSafeArea) and sets
-           this class with a fixed notch height instead. */
+        /* iOS standalone: the status bar overlaps the content. env()
+           sometimes reports 0 there (WebKit bug), and even when it
+           reports correctly it can be too tight. In standalone mode
+           (html.standalone, set by the client) enforce a generous
+           minimum; when env() is provably lying (html.no-safe-area)
+           use the full fixed notch height. */
+        html.standalone body {
+            padding-top: max(env(safe-area-inset-top), 59px);
+        }
+
+        html.standalone header {
+            top: max(env(safe-area-inset-top), 59px);
+        }
+
+        html.standalone .connection-status {
+            top: max(env(safe-area-inset-top), 59px);
+        }
+
         html.no-safe-area body {
-            padding-top: 59px;   /* iPhone notch + status bar */
+            padding-top: 59px;
         }
 
         html.no-safe-area header {

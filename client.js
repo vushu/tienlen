@@ -425,14 +425,15 @@ document.addEventListener('click', function requestNotify() {
     }
 }, { once: true });
 
-// iOS standalone bug: env(safe-area-inset-*) can report 0 in home-screen
-// apps even with viewport-fit=cover (WebKit quirk). Measure it with a
-// probe; when it lies, fall back to a fixed status-bar height via a
-// class on <html>.
+// iOS standalone: env(safe-area-inset-*) can report 0 (or too little)
+// in home-screen apps even with viewport-fit=cover (WebKit quirk).
+// In standalone mode we always flag the document so CSS can enforce
+// a generous fixed minimum on top of whatever env() reports.
 function fixSafeArea() {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches
         || window.navigator.standalone === true;
     if (!isStandalone) return;
+    document.documentElement.classList.add('standalone');
     const probe = document.createElement('div');
     probe.style.cssText =
         'position:fixed;top:0;height:env(safe-area-inset-top);visibility:hidden;pointer-events:none;';
