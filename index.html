@@ -963,10 +963,12 @@
         .log-entry .what {
             opacity: 0.85;
             word-break: break-word;
-            /* The action (played X / passed) floats right, opposite
-               the player name. */
+            /* The action (cards / passed) floats right, opposite the
+               player name. Many cards wrap onto their own lines,
+               right-aligned, instead of stretching the row. */
             margin-left: auto;
             text-align: right;
+            flex-shrink: 1;
         }
 
         .log-entry.bomb .who,
