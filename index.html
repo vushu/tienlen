@@ -921,6 +921,12 @@
             width: min(340px, calc(100vw - 32px));
             max-height: min(55vh, 480px);
             overflow-y: auto;
+            /* iOS: touch scrolling inside fixed-position elements needs
+               this, and the panel must not let touches scroll the page
+               behind it. */
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+            touch-action: pan-y;
             padding: 14px 16px;
             border-radius: 14px;
             background: rgba(18, 22, 30, 0.97);
