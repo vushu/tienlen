@@ -869,9 +869,11 @@ function logHtml(entries) {
         const cards = (e.cards || []).map(c =>
             `<span class="mini-card${isRed(c) ? ' red' : ''}">${rankText(c.rank)}${suitText(c.suit)}</span>`
         ).join('');
+        // Placements show just the cards (playing is implicit); only
+        // passes get a word.
         const what = e.action === 'pass'
             ? 'passed'
-            : `played ${cards}`;
+            : `<span class="mini-cards">${cards}</span>`;
         return `<div class="log-entry${e.bomb ? ' bomb' : ''}">` +
             `<span class="who">${who}</span>` +
             `<span class="what">${what}${e.bomb ? ' 💥' : ''}</span>` +
