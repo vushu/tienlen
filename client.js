@@ -44,9 +44,27 @@ function askPlayerName() {
 function askRoomCode() {
     const code = prompt('Enter the room code for this game:');
     if (code) {
-        sessionStorage.setItem('tienlen_room', code.trim());
+        rememberRoomCode(code.trim());
     }
-    return sessionStorage.getItem('tienlen_room');
+    return localStorage.getItem(roomKey());
+}
+
+// The room code is stored per room (keyed by the page's base path) in
+// localStorage: it must survive home-screen app restarts (sessionStorage
+// is wiped on every cold launch) and tabs on different rooms must not
+// fight over one stored code.
+function roomKey() {
+    return 'tienlen_room:' + location.pathname.replace(/\/[^/]*$/, '');
+}
+
+// Keep the code in a cookie too: the manifest request (Add to Home
+// Screen) carries cookies but not the URL fragment, and the server
+// bakes the code into the manifest's start_url from it.
+function rememberRoomCode(code) {
+    localStorage.setItem(roomKey(), code);
+    document.cookie = 'tienlen_room=' + encodeURIComponent(code)
+        + ';path=' + location.pathname.replace(/\/[^/]*$/, '/')
+        + ';max-age=31536000;SameSite=Strict';
 }
 
 // Room code from the URL fragment (#code): shareable links like
@@ -58,7 +76,7 @@ function roomCodeFromUrl() {
     if (location.hash.length > 1) {
         const code = decodeURIComponent(location.hash.slice(1)).trim();
         if (code) {
-            sessionStorage.setItem('tienlen_room', code);
+            rememberRoomCode(code);
             history.replaceState(null, '', location.pathname + location.search);
             return true;
         }
@@ -71,7 +89,7 @@ function roomCodeFromUrl() {
 // 1006), but fetch() sees the 401 reliably. Returns true when the code
 // is accepted (or no code is needed).
 async function checkRoomCode() {
-    const room = sessionStorage.getItem('tienlen_room') || '';
+    const room = localStorage.getItem(roomKey()) || '';
     if (!room) return true;   // nothing stored: the server may not require one
     const base = location.pathname.replace(/\/[^/]*$/, '');
     try {
@@ -89,12 +107,13 @@ function connectSocket() {
         sessionStorage.setItem('tienlen_token', crypto.randomUUID());
     }
     const token = sessionStorage.getItem('tienlen_token');
-    // Room code (if the server requires one): remembered per tab session.
-    // A #code URL fragment counts as having entered it. Ask BEFORE the
-    // first connection: a 401 rejection mid-handshake makes browsers
-    // treat it as failed HTTP authentication and aborts the WebSocket
-    // entirely (no retry), so we cannot recover after the fact.
-    if (!sessionStorage.getItem('tienlen_room') && !roomCodeFromUrl() && !window.__roomAsked) {
+    // Room code (if the server requires one): remembered per room, in
+    // localStorage so home-screen app launches keep it. A #code URL
+    // fragment counts as having entered it. Ask BEFORE the first
+    // connection: a 401 rejection mid-handshake makes browsers treat it
+    // as failed HTTP authentication and aborts the WebSocket entirely
+    // (no retry), so we cannot recover after the fact.
+    if (!localStorage.getItem(roomKey()) && !roomCodeFromUrl() && !window.__roomAsked) {
         window.__roomAsked = true;
         askRoomCode();
     }
@@ -103,7 +122,7 @@ function connectSocket() {
         window.__nameAsked = true;
         askPlayerName();
     }
-    const room = sessionStorage.getItem('tienlen_room') || '';
+    const room = localStorage.getItem(roomKey()) || '';
     const roomParam = room ? '&room=' + encodeURIComponent(room) : '';
     // Identity token (persistent rooms): stored in localStorage so it
     // survives browser restarts - the server uses it to own a seat in
@@ -320,7 +339,7 @@ function connectSocket() {
             const ok = await checkRoomCode();
             if (!ok) {
                 // Stale code: forget it and ask again before reconnecting.
-                sessionStorage.removeItem('tienlen_room');
+                localStorage.removeItem(roomKey());
                 window.__roomAsked = false;
                 askRoomCode();
             }

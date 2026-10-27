@@ -227,6 +227,7 @@ static_root(Root) :-
 register_at(Prefix) :-
     register_one(Prefix, ws, ws_with_token, [spawn([])]),
     register_one(Prefix, check, handle_check_room, []),
+    register_one(Prefix, manifest, serve_manifest, []),
     register_one(Prefix, admin, serve_admin_page, []),
     register_one(Prefix, 'admin/status', handle_admin_status, []),
     register_one(Prefix, 'admin/kick-all', handle_admin_kick, []),
@@ -240,6 +241,27 @@ register_at(Prefix) :-
     Spec =.. [Prefix, '.'],
     Closure =.. [http_reply_from_files, Root, [headers([cache_control('no-cache')])]],
     http_handler(Spec, Closure, [prefix]).
+
+% Web-app manifest for "Add to Home Screen": the start_url echoes the
+% room code, so a home-screen app created from /tienlen/family/#tu4u
+% relaunches with the code intact (iOS strips fragments from the
+% entered URL, but keeps the manifest's start_url verbatim). The code
+% reaches us via the tienlen_room cookie (fragments are never sent in
+% HTTP requests, cookies are).
+serve_manifest(Request) :-
+    (   memberchk(cookie(Cookies), Request),
+        memberchk(tienlen_room=Code, Cookies),
+        Code \== ''
+    ->  atomic_list_concat(['./#', Code], Start)
+    ;   Start = './'
+    ),
+    reply_json_dict(_{name: 'Tiến Lên',
+                      short_name: 'Tiến Lên',
+                      start_url: Start,
+                      display: 'standalone',
+                      background_color: '#12161e',
+                      theme_color: '#12161e',
+                      icons: []}).
 
 register_one(Prefix, Path, Handler, Options) :-
     Spec =.. [Prefix, Path],
