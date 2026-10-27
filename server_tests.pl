@@ -392,9 +392,9 @@ test(start_new_game_settles_opening) :-
 test(lobby_no_autostart) :-
     server:retractall(players(_)), server:assertz(players([])),
     server:retractall(game(_)),
-    catch(seat_client(fake_ws_0, none, none), _, true),
-    catch(seat_client(fake_ws_1, none, none), _, true),
-    catch(seat_client(fake_ws_2, none, none), _, true),
+    catch(seat_client(fake_ws_0, none, none, 0), _, true),
+    catch(seat_client(fake_ws_1, none, none, 0), _, true),
+    catch(seat_client(fake_ws_2, none, none, 0), _, true),
     \+ game(_),
     players([]),
     server:spectators(Specs),
@@ -455,7 +455,7 @@ test(reconnect_reclaims_seat) :-
     server:retractall(game(_)),
     server:retractall(session(_, _)),
     server:assertz(session(0, token_a)),
-    catch(seat_client(new_ws, token_a, none), _, true),
+    catch(seat_client(new_ws, token_a, none, 0), _, true),
     players([new_ws, fake_ws_1]),   % seat 0 replaced, not appended
     server:session(0, token_a),     % session still registered
     cleanup_fake_game.
@@ -471,7 +471,7 @@ test(join_after_kick_seats_and_lifts_ban) :-
     server:retractall(kicked_session(_)),
     server:retractall(ws_token(_, _)),
     server:assertz(kicked_session(token_k)),
-    catch(seat_client(kicked_ws, token_k, none), _, true),   % reconnect: spectator
+    catch(seat_client(kicked_ws, token_k, none, 0), _, true),   % reconnect: spectator
     server:spectators(Specs1), memberchk(kicked_ws, Specs1),
     catch(handle_message(kicked_ws, '{"type":"join"}'), _, true),
     players([kicked_ws]),                    % seated via the join message
@@ -496,7 +496,7 @@ test(fresh_connection_spectator_until_join) :-
     server:retractall(game(_)),
     server:retractall(session(_, _)),
     server:retractall(ws_token(_, _)),
-    catch(seat_client(fresh_ws, token_fresh, none), _, true),
+    catch(seat_client(fresh_ws, token_fresh, none, 0), _, true),
     players([]),                              % not seated automatically
     server:spectators(Specs), memberchk(fresh_ws, Specs),
     catch(handle_message(fresh_ws, '{"type":"join"}'), _, true),
@@ -550,6 +550,25 @@ test(decline_seat_keeps_spectator) :-
     catch(handle_message(spec_ws, '{"type":"decline_seat","seat":1}'), _, true),
     server:spectators(Specs), memberchk(spec_ws, Specs),  % still watching
     server:seat_declined(1, spec_ws),                     % declination recorded
+    cleanup_fake_game.
+
+% Bombs are recorded with sequence ids so a client that was away can
+% replay them on reconnect: the away client (last seen 0) is told about
+% a newer bomb, the live client (last seen the bomb's id) is not, and
+% a new game clears the history.
+test(bomb_replay_for_returning_clients) :-
+    server:retractall(players(_)), server:assertz(players([fake_ws_0, fake_ws_1])),
+    server:retractall(spectators(_)), server:assertz(spectators([])),
+    server:retractall(bomb_event(_, _)),
+    server:retractall(bomb_seq(_)), server:assertz(bomb_seq(0)),
+    server:retractall(game(_)),
+    server:retractall(dead_socket(_)),
+    broadcast_event(bombed, 0),
+    server:bomb_event(Id, 0), Id == 1,
+    findall(B, (server:bomb_event(B, _), B > 0), Missed), Missed == [1],
+    findall(B, (server:bomb_event(B, _), B > 1), Current), Current == [],
+    catch(start_new_game, _, true),
+    \+ server:bomb_event(_, _),
     cleanup_fake_game.
 
 % Accepting a seat offer for a seat that no longer exists (the lobby
@@ -645,7 +664,8 @@ cleanup_fake_game :-
     server:retractall(seat_declined(_, _)),
     server:retractall(left_seats(_)), server:assertz(left_seats([])),
     server:retractall(dead_socket(_)),
-    server:retractall(left_seats(_)), server:assertz(left_seats([])),
+    server:retractall(bomb_event(_, _)),
+    server:retractall(bomb_seq(_)), server:assertz(bomb_seq(0)),
     server:retractall(previous_winner(_, _)), server:asserta(previous_winner(none, none)).
 
 :- end_tests(server_moves).

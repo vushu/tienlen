@@ -94,12 +94,15 @@ function connectSocket() {
         localStorage.setItem('tienlen_ident', crypto.randomUUID());
     }
     const ident = localStorage.getItem('tienlen_ident');
+    // Last bomb animation seen: the server replays bombs that happened
+    // while we were away (e.g. our 2 was bombed overnight).
+    const lastBomb = localStorage.getItem('tienlen_last_bomb') || '0';
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = location.host;   // works when served from the server itself
     // Base path: the directory this page was served from (supports
     // hosting under a subpath like /tienlen/ behind a reverse proxy).
     const base = location.pathname.replace(/\/[^/]*$/, '');
-    socket = new WebSocket(proto + '//' + host + base + '/ws?token=' + token + '&ident=' + ident + roomParam);
+    socket = new WebSocket(proto + '//' + host + base + '/ws?token=' + token + '&ident=' + ident + '&last_bomb=' + lastBomb + roomParam);
 
     socket.onopen = () => {
         console.log('Connected to WebSocket server');
@@ -194,7 +197,14 @@ function connectSocket() {
             }
             if (data.event === 'joined') spawnJoinedToast(data.seat);
             if (data.event === 'promoted') spawnPromotedToast(data.seat);
-            if (data.event === 'bombed') spawnBombAnimation(data.seat);
+            if (data.event === 'bombed') {
+                spawnBombAnimation(data.seat);
+                // Remember the highest bomb id: the server replays
+                // anything newer when we reconnect.
+                if (typeof data.bomb_id === 'number') {
+                    localStorage.setItem('tienlen_last_bomb', String(data.bomb_id));
+                }
+            }
             if (data.event === 'grace_started') startGraceCountdown(data.seat);
             if (data.event === 'grace_ended') stopGraceCountdown();
             if (data.event === 'you_are_seated' && receivedData) {

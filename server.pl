@@ -17,7 +17,7 @@
 %
 % Run with: swipl server.pl   (or ./run)
 
-:- module(server, [start/0, handle_ws/3, handle_message/2, handle_move/2, handle_kick_all/0, apply_move/3, settle/2, place_term/2, game_is_over/1, extract_player_index/2, client_action_allowed/2, start_new_game/0, update_game/1, broadcast/1, player_view/3, send_json/2, seat_client/3, remove_client/1, players/1, game/1, handle_player_left/2, broadcast_event/2, bomb_beaten/2]).
+:- module(server, [start/0, handle_ws/4, handle_message/2, handle_move/2, handle_kick_all/0, apply_move/3, settle/2, place_term/2, game_is_over/1, extract_player_index/2, client_action_allowed/2, start_new_game/0, update_game/1, broadcast/1, player_view/3, send_json/2, seat_client/4, remove_client/1, players/1, game/1, handle_player_left/2, broadcast_event/2, bomb_beaten/2]).
 :- use_module(library(http/http_server)).
 :- use_module(library(http/websocket)).
 :- use_module(library(http/http_files)).
@@ -242,11 +242,14 @@ ws_with_token(Request) :-
     (   authorized_room(Request)
     ->  (   memberchk(search(Search), Request),
             (   memberchk(token=Token, Search) -> true ; Token = none ),
-            (   memberchk(ident=Ident, Search) -> true ; Ident = none )
+            (   memberchk(ident=Ident, Search) -> true ; Ident = none ),
+            (   memberchk(last_bomb=LastBomb, Search)
+            ->  catch(atom_number(LastBomb, LastBombN), _, LastBombN = 0)
+            ;   LastBombN = 0 )
         ->  true
-        ;   Token = none, Ident = none
+        ;   Token = none, Ident = none, LastBombN = 0
         ),
-        http_upgrade_to_websocket(handle_ws(Token, Ident), [], Request)
+        http_upgrade_to_websocket(handle_ws(Token, Ident, LastBombN), [], Request)
     ;   % Wrong or missing room code: refuse the upgrade.
         reply_json_dict(_{error:unauthorized}, [status(401)])
     ).
@@ -423,8 +426,8 @@ serve_admin_page(Request) :-
 % Seat once per connection, then process messages until the connection
 % closes. The loop must not re-seat: a kicked or dying socket's error path
 % would otherwise re-add the dead socket to the lobby.
-handle_ws(Token, Ident, WS) :-
-    with_mutex(tienlen_game, seat_client(WS, Token, Ident)),
+handle_ws(Token, Ident, LastBomb, WS) :-
+    with_mutex(tienlen_game, seat_client(WS, Token, Ident, LastBomb)),
     handle_ws_loop(WS).
 
 % A dropped connection (tab closed, network loss) surfaces as an
@@ -449,7 +452,7 @@ handle_ws_loop(WS) :-
 % player reclaims that seat (page refresh keeps your hand). While no game
 % is running, everyone sees the lobby status; a game is started with a
 % "new_game" message once at least 2 are seated.
-seat_client(WS, Token, Ident) :-
+seat_client(WS, Token, Ident, LastBomb) :-
     % Remember the tokens for this connection: the per-tab session token
     % (seat reclaim on refresh) and, in persistent mode, the long-lived
     % identity token (seat ownership).
@@ -481,7 +484,8 @@ seat_client(WS, Token, Ident) :-
         (   game(GS)
         ->  player_view(GS, Seat, View),
             send_json(WS, View),
-            send_names(WS)
+            send_names(WS),
+            send_missed_bombs(WS, LastBomb)
         ;   broadcast_lobby
         )
     ;   Token \== none, kicked_session(Token)
@@ -500,7 +504,8 @@ seat_client(WS, Token, Ident) :-
         (   game(GS)
         ->  player_view(GS, Seat, View),
             send_json(WS, View),
-            send_names(WS)
+            send_names(WS),
+            send_missed_bombs(WS, LastBomb)
         ;   broadcast_lobby
         )
     ;   % Everyone else starts as a spectator: joining the game is an
@@ -516,7 +521,8 @@ seat_client(WS, Token, Ident) :-
 spectator_join(WS) :-
     (   game(GS)
     ->  player_view(GS, -1, View),   % seat -1: no hand is yours
-        send_json(WS, View)
+        send_json(WS, View),
+        send_missed_bombs(WS, 0)   % a fresh spectator sees recent bombs
     ;   players(Players),
         length(Players, Seated),
         Needed is max(2 - Seated, 0),
@@ -1373,11 +1379,59 @@ bombing_combination(three_of_kind([card(2, _), card(2, _), card(2, _)]),
     length(Cards, 10).
 
 % A transient event (not game state): clients animate it and discard it.
+% Bombs are also recorded (with a sequence number) so clients that were
+% away can replay them on return: "you bombed my 2 while I was gone"
+% should still explode when I open the page again.
+broadcast_event(bombed, Seat) :-
+    !,
+    next_bomb_id(Id),
+    assertz(bomb_event(Id, Seat)),
+    trim_bomb_history,
+    players(Players),
+    spectators(Specs),
+    forall((member(WS, Players) ; member(WS, Specs)),
+           send_json(WS, json([type=event, event=bombed, seat=Seat, bomb_id=Id]))).
 broadcast_event(Event, Seat) :-
     players(Players),
     spectators(Specs),
     forall((member(WS, Players) ; member(WS, Specs)),
            send_json(WS, json([type=event, event=Event, seat=Seat]))).
+
+% Bomb history: every bomb gets a monotonically increasing id. Clients
+% report the highest id they have seen; on (re)connect the server sends
+% everything newer. Cleared when a new game starts.
+:- dynamic bomb_event/2.   % bomb_event(Id, Seat)
+:- dynamic bomb_seq/1.
+bomb_seq(0).
+
+next_bomb_id(Id) :-
+    retract(bomb_seq(N)),
+    N1 is N + 1,
+    assertz(bomb_seq(N1)),
+    Id = N1.
+
+% Keep the history bounded: only the recent bombs matter for replay
+% (a returning player sees the last few, not the whole game's).
+trim_bomb_history :-
+    findall(Id, bomb_event(Id, _), Ids),
+    length(Ids, Count),
+    (   Count > 20
+    ->  sort(Ids, Sorted),
+        Keep is Count - 20,
+        nth0(Keep, Sorted, Cutoff),
+        forall((bomb_event(Id, _), Id =< Cutoff), retractall(bomb_event(Id, _)))
+    ;   true
+    ).
+
+% Send the bombs a client has not seen yet (those with a higher id than
+% their last seen). Called on (re)connect and on the client's request.
+send_missed_bombs(WS, LastSeen) :-
+    findall(json([type=event, event=bombed, seat=Seat, bomb_id=Id]),
+            (   bomb_event(Id, Seat),
+                Id > LastSeen
+            ),
+            Missed),
+    forall(member(Msg, Missed), send_json(WS, Msg)).
 
 % The engine's next_move tells us what the current player must do:
 %   make_move -> the player freely chooses (place anything valid or pass)
@@ -1470,6 +1524,9 @@ start_new_game :-
     % Drop any mid-game departure placeholders FIRST so the game is dealt
     % for the connected players only (seats re-align to connection order).
     prune_left_seats,
+    % A new deal: no bombs from the previous game carry over.
+    retractall(bomb_event(_, _)),
+    retractall(bomb_seq(_)), assertz(bomb_seq(0)),
     % A new game clears the kick bans: everyone may seat again.
     retractall(kicked_session(_)),
     players(Players),
