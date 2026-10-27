@@ -13,6 +13,14 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <script>
+        // Service worker: instant PWA launches (cached app shell) with
+        // background refresh. https (localhost is fine too).
+        if ('serviceWorker' in navigator
+            && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+            navigator.serviceWorker.register('sw.js');
+        }
+    </script>
     <style>
         * {
             box-sizing: border-box;
