@@ -870,10 +870,12 @@ function logHtml(entries) {
             `<span class="mini-card${isRed(c) ? ' red' : ''}">${rankText(c.rank)}${suitText(c.suit)}</span>`
         ).join('');
         // Placements show just the cards (playing is implicit); only
-        // passes get a word.
+        // passes get a word. Bombs say "bombed" with the explosion.
         const what = e.action === 'pass'
             ? 'passed'
-            : `<span class="mini-cards">${cards}</span>`;
+            : e.bomb
+                ? `<span class="mini-cards">${cards}</span> bombed 💥`
+                : `<span class="mini-cards">${cards}</span>`;
         return `<div class="log-entry${e.bomb ? ' bomb' : ''}">` +
             `<span class="who">${who}</span>` +
             `<span class="what">${what}${e.bomb ? ' 💥' : ''}</span>` +
