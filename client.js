@@ -425,22 +425,36 @@ document.addEventListener('click', function requestNotify() {
     }
 }, { once: true });
 
-// iOS standalone with the solid black status bar: the page starts
-// below it, so no safe-area compensation is needed there. (Kept for
-// notched browsers in tab mode where the page extends under the notch.)
+// iOS standalone with black-translucent status bar: the page extends
+// under the notch. env(safe-area-inset-top) is unreliable there (often
+// reports 0), so measure the truth: the visual viewport's offset from
+// the layout viewport top is exactly the status bar height. Set it as
+// a CSS variable the padding rules use as a floor.
 function fixSafeArea() {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches
         || window.navigator.standalone === true;
     if (!isStandalone) return;
-    const probe = document.createElement('div');
-    probe.style.cssText =
-        'position:fixed;top:0;height:env(safe-area-inset-top);visibility:hidden;pointer-events:none;';
-    document.body.appendChild(probe);
-    const inset = probe.getBoundingClientRect().height;
-    probe.remove();
-    if (inset < 20) {   // 0 or implausibly small: the env() is lying
-        document.documentElement.classList.add('no-safe-area');
-    }
+    const apply = () => {
+        const inset = window.visualViewport
+            ? Math.round(window.visualViewport.offsetTop)
+            : 0;
+        // Fallback: probe env() itself; if both lie, use the typical
+        // notch height (47px on iPhone 13 Pro Max).
+        let sat = inset;
+        if (sat < 20) {
+            const probe = document.createElement('div');
+            probe.style.cssText =
+                'position:fixed;top:0;height:env(safe-area-inset-top);visibility:hidden;pointer-events:none;';
+            document.body.appendChild(probe);
+            sat = probe.getBoundingClientRect().height;
+            probe.remove();
+        }
+        if (sat < 20) sat = 47;   // typical notch height
+        document.documentElement.style.setProperty('--sat', sat + 'px');
+    };
+    apply();
+    // Re-measure on resize/rotation (the inset changes in landscape).
+    window.addEventListener('orientationchange', () => setTimeout(apply, 300));
 }
 fixSafeArea();
 

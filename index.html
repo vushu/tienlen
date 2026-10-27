@@ -12,7 +12,7 @@
     <link rel="icon" type="image/svg+xml" href="icon.svg">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <script>
         // Service worker: instant PWA launches (cached app shell) with
         // background refresh. https (localhost is fine too).
@@ -32,28 +32,21 @@
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             color: #ecf0f1;
             background: radial-gradient(ellipse at top, #1d6f42 0%, #14532d 55%, #0c3a1e 100%);
-            /* Home-screen app (standalone) on notched iPhones: the page
-               extends under the status bar; keep the content below it.
-               The max() gives a little extra clearance so the status
-               bar text never crowds the header. */
-            padding-top: max(env(safe-area-inset-top), 8px);
+            /* Notched devices: the page extends under the status bar;
+               keep the content below it. --sat is set by the client
+               (fixSafeArea) as a reliable fallback when env() lies
+               (iOS standalone bug); 0px default = no notch. */
+            padding-top: max(env(safe-area-inset-top), var(--sat, 0px), 8px);
             padding-left: env(safe-area-inset-left);
             padding-right: env(safe-area-inset-right);
             padding-bottom: env(safe-area-inset-bottom);
         }
 
-        /* iOS standalone: with the solid black status bar the page
-           starts below it, so no safe-area compensation is needed.
-           The env() padding stays for notched browsers (Safari tab
-           mode) where the page does extend under the notch. */
-
-        /* ---------- Header ---------- */
-
         header {
             position: sticky;
             /* Stay below the iOS status bar when scrolled: the body's
                safe-area padding only covers the unscrolled position. */
-            top: env(safe-area-inset-top);
+            top: max(env(safe-area-inset-top), var(--sat, 0px));
             z-index: 10;
             display: flex;
             align-items: center;
@@ -65,6 +58,8 @@
             backdrop-filter: blur(4px);
             border-bottom: 2px solid rgba(255, 255, 255, 0.12);
         }
+
+        /* ---------- Header ---------- */
 
         header h1 {
             margin: 0;
@@ -123,7 +118,7 @@
 
         .connection-status {
             position: fixed;
-            top: env(safe-area-inset-top);
+            top: max(env(safe-area-inset-top), var(--sat, 0px));
             left: 0;
             right: 0;
             z-index: 300;
