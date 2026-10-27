@@ -67,19 +67,19 @@ function rememberRoomCode(code) {
         + ';max-age=31536000;SameSite=Strict';
 }
 
-// Room code from the URL fragment (#code): shareable links like
-// https://host/tienlen/family/#tu4u. The fragment never reaches the
-// server (no logs, no Referer leak), so this is as safe as the code
-// being in the link itself. The code is stored and the fragment is
-// stripped from the address bar so it does not linger in history.
+// Room code from the URL query (?code=): shareable links like
+// https://host/tienlen/family/?code=tu4u (same style as the admin
+// page's ?key=). The code is stored and the query is stripped from
+// the address bar so it does not linger in history.
 function roomCodeFromUrl() {
-    if (location.hash.length > 1) {
-        const code = decodeURIComponent(location.hash.slice(1)).trim();
-        if (code) {
-            rememberRoomCode(code);
-            history.replaceState(null, '', location.pathname + location.search);
-            return true;
-        }
+    const params = new URLSearchParams(location.search);
+    const code = (params.get('code') || '').trim();
+    if (code) {
+        rememberRoomCode(code);
+        params.delete('code');
+        const qs = params.toString();
+        history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+        return true;
     }
     return false;
 }

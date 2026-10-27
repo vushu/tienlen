@@ -243,16 +243,16 @@ register_at(Prefix) :-
     http_handler(Spec, Closure, [prefix]).
 
 % Web-app manifest for "Add to Home Screen": the start_url echoes the
-% room code, so a home-screen app created from /tienlen/family/#tu4u
-% relaunches with the code intact (iOS strips fragments from the
+% room code, so a home-screen app created from /tienlen/family/?code=tu4u
+% relaunches with the code intact (iOS strips query strings from the
 % entered URL, but keeps the manifest's start_url verbatim). The code
-% reaches us via the tienlen_room cookie (fragments are never sent in
-% HTTP requests, cookies are).
+% reaches us via the tienlen_room cookie (query strings are not sent
+% with the manifest request, cookies are).
 serve_manifest(Request) :-
     (   memberchk(cookie(Cookies), Request),
         memberchk(tienlen_room=Code, Cookies),
         Code \== ''
-    ->  atomic_list_concat(['./#', Code], Start)
+    ->  atomic_list_concat(['./?code=', Code], Start)
     ;   Start = './'
     ),
     reply_json_dict(_{name: 'Tiến Lên',
