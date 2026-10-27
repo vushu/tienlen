@@ -449,6 +449,14 @@ extended_sequence(PreviousRank,[card(R1, S1) | T], [card(R1, S1) | MoreSequence]
     next(PreviousRank, R1),
     extended_sequence(R1,T, MoreSequence, Remaining).
 
+% A duplicate of the previous rank blocks the sorted-list scan: e.g.
+% 8 9 9 9 10 - after taking the first 9, the next card is another 9,
+% not the 10, and the sequence would die. Skip same-rank cards to
+% keep extending (the 10 is still reachable).
+extended_sequence(PreviousRank,[card(R1, _) | T], MoreSequence, Remaining) :-
+    R1 == PreviousRank,
+    extended_sequence(PreviousRank, T, MoreSequence, Remaining).
+
 extended_sequence(_,Remaining, [], Remaining).
 
 extended_double_sequence(PreviousRank,[card(R1, S1), card(R1, S2) | T], [card(R1, S1), card(R1, S2) | MoreSequence], Remaining) :-
@@ -785,6 +793,17 @@ test(possible_to_beat_with_hand_sequence) :-
 
 test(possible_to_beat_with_hand_sequence) :-
     possible_to_beat_with_hand([card(4, spades), card(5, spades), card(6, spades), card(7, spades), card(8, spades), card(9, clubs)], sequence([card(5,clubs),card(6,clubs),card(7,clubs), card(8, clubs)])).
+
+% Regression (real game bug): duplicate ranks inside the hand must not
+% block sequence extension. Hand 6 7 8 9 9 9 10 contains 6-7-8-9-10,
+% which beats a 4-8 sequence - but the sorted-list scan used to stop
+% at the duplicate 9s and never reach the 10, wrongly forcing a pass.
+test(possible_to_beat_with_hand_sequence_past_duplicates) :-
+    possible_to_beat_with_hand([card(k,hearts), card(4,spades), card(10,clubs), card(a,hearts),
+                                card(6,diamonds), card(9,diamonds), card(9,spades), card(9,clubs),
+                                card(7,spades), card(8,diamonds), card(q,diamonds)],
+                               sequence([card(4,hearts), card(5,diamonds), card(6,spades),
+                                         card(7,diamonds), card(8,clubs)])).
 
 test(possible_to_beat_with_hand_double_sequence) :-
     get_double_sequence_predefined_hand(Hand),
