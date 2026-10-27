@@ -12,7 +12,7 @@
     <link rel="icon" type="image/svg+xml" href="icon.svg">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <script>
         // Service worker: instant PWA launches (cached app shell) with
         // background refresh. https (localhost is fine too).
@@ -42,35 +42,10 @@
             padding-bottom: env(safe-area-inset-bottom);
         }
 
-        /* iOS standalone: the status bar overlaps the content. env()
-           sometimes reports 0 there (WebKit bug), and even when it
-           reports correctly it can be too tight. In standalone mode
-           (html.standalone, set by the client) enforce a generous
-           minimum; when env() is provably lying (html.no-safe-area)
-           use the full fixed notch height. */
-        html.standalone body {
-            padding-top: max(env(safe-area-inset-top), 59px);
-        }
-
-        html.standalone header {
-            top: max(env(safe-area-inset-top), 59px);
-        }
-
-        html.standalone .connection-status {
-            top: max(env(safe-area-inset-top), 59px);
-        }
-
-        html.no-safe-area body {
-            padding-top: 59px;
-        }
-
-        html.no-safe-area header {
-            top: 59px;
-        }
-
-        html.no-safe-area .connection-status {
-            top: 59px;
-        }
+        /* iOS standalone: with the solid black status bar the page
+           starts below it, so no safe-area compensation is needed.
+           The env() padding stays for notched browsers (Safari tab
+           mode) where the page does extend under the notch. */
 
         /* ---------- Header ---------- */
 

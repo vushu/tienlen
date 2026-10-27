@@ -425,15 +425,13 @@ document.addEventListener('click', function requestNotify() {
     }
 }, { once: true });
 
-// iOS standalone: env(safe-area-inset-*) can report 0 (or too little)
-// in home-screen apps even with viewport-fit=cover (WebKit quirk).
-// In standalone mode we always flag the document so CSS can enforce
-// a generous fixed minimum on top of whatever env() reports.
+// iOS standalone with the solid black status bar: the page starts
+// below it, so no safe-area compensation is needed there. (Kept for
+// notched browsers in tab mode where the page extends under the notch.)
 function fixSafeArea() {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches
         || window.navigator.standalone === true;
     if (!isStandalone) return;
-    document.documentElement.classList.add('standalone');
     const probe = document.createElement('div');
     probe.style.cssText =
         'position:fixed;top:0;height:env(safe-area-inset-top);visibility:hidden;pointer-events:none;';
