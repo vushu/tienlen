@@ -247,6 +247,21 @@
             border: 1px solid rgba(241, 196, 15, 0.35);
         }
 
+        /* Away badge: small amber pill, same as the player view's
+           pass/left badges. */
+        .away-badge {
+            padding: 1px 8px;
+            border-radius: 999px;
+            font-size: 0.75em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #f39c12;
+            background: rgba(243, 156, 18, 0.15);
+            border: 1px solid rgba(243, 156, 18, 0.5);
+            white-space: nowrap;
+        }
+
         /* ---------- Floating panels (bottom corners) ---------- */
 
         /* Raw JSON dump: bottom-left. */
@@ -574,7 +589,7 @@
                 html += '<span class="chip turn">Persistent room</span>';
             }
             if (d.disconnected && d.disconnected.length) {
-                html += '<span class="chip danger">' + awayLabel.charAt(0).toUpperCase() + awayLabel.slice(1) + ': ' +
+                html += '<span class="away-badge">' + awayLabel.charAt(0).toUpperCase() + awayLabel.slice(1) + ': ' +
                     d.disconnected.map(s => 'P' + (s + 1)).join(', ') + '</span>';
             }
             if (d.game.running) {
@@ -635,7 +650,7 @@
                     const name = names[i] || ('Player ' + (i + 1));
                     const dead = d.disconnected && d.disconnected.includes(i);
                     html += '<div class=player-row><span class=name>' + name +
-                        (dead ? ' <span class=chip>' + (d.persistent ? 'away' : 'disconnected') + '</span>' : '') +
+                        (dead ? ' <span class="away-badge">' + (d.persistent ? 'away' : 'disconnected') + '</span>' : '') +
                         '</span><span class=count>' + cards + '</span>' +
                         '<button class="danger small" onclick="kickOne(' + i + ')">Kick</button></div>';
                 }
