@@ -570,6 +570,21 @@ spectator_join(WS) :-
 % presented (persistent mode only).
 :- dynamic ws_ident/2.
 
+% The state file for this room: derived from the base path so multiple
+% persistent rooms can share a working directory without clobbering
+% each other's state (e.g. /tienlen/family -> room_state_tienlen_family.pl).
+% Falls back to room_state.pl when no base path is set.
+state_file(File) :-
+    base_path(Base),
+    (   Base == '/'
+    ->  File = 'room_state.pl'
+    ;   atomic_list_concat(['room_state_', Base, '.pl'], File0),
+        % strip the slashes: /tienlen/family -> _tienlen_family
+        atom_codes(File0, Codes),
+        maplist([C, S]>>(C == 47 -> S = 95 ; S = C), Codes, Slashless),
+        atom_codes(File, Slashless)
+    ).
+
 % Save the room state to disk (persistent mode only). Called after every
 % game state change; the file is read back on startup. Must always
 % succeed: a failure here would kill the message handler thread (and
@@ -591,7 +606,8 @@ save_room_state :-
                    ),
                    Names),
            (   game(GS) -> true ; GS = none ),
-           open('room_state.pl', write, Stream),
+           state_file(File),
+           open(File, write, Stream),
            write_term(Stream, room_state(Owners, Names, GS), [quoted(true)]),
            write(Stream, '.\n'),
            close(Stream)),
@@ -603,7 +619,8 @@ save_room_state :-
 load_room_state :-
     \+ persistent_mode, !.
 load_room_state :-
-    (   catch((open('room_state.pl', read, Stream),
+    (   catch((state_file(File),
+               open(File, read, Stream),
                read_term(Stream, room_state(Owners, Names, GS), []),
                close(Stream)),
               _, fail)
