@@ -643,7 +643,8 @@ state_file(File) :-
 % succeed: a failure here would kill the message handler thread (and
 % with it the connection). Sockets are NOT saved (meaningless after a
 % restart): instead the owner identity token and alias of each seat are
-% stored, and the seats are rebuilt as placeholders on load.
+% stored, and the seats are rebuilt as placeholders on load. The round
+% log is saved too, so a restart does not wipe the move history.
 save_room_state :-
     \+ persistent_mode, !.
 save_room_state :-
@@ -659,9 +660,10 @@ save_room_state :-
                    ),
                    Names),
            (   game(GS) -> true ; GS = none ),
+           round_log(Log),
            state_file(File),
            open(File, write, Stream),
-           write_term(Stream, room_state(Owners, Names, GS), [quoted(true)]),
+           write_term(Stream, room_state(Owners, Names, GS, Log), [quoted(true)]),
            write(Stream, '.\n'),
            close(Stream)),
           E, format(user_error, 'Room state save failed: ~q~n', [E])).
@@ -674,7 +676,7 @@ load_room_state :-
 load_room_state :-
     (   catch((state_file(File),
                open(File, read, Stream),
-               read_term(Stream, room_state(Owners, Names, GS), []),
+               read_term(Stream, room_state(Owners, Names, GS, Log), []),
                close(Stream)),
               _, fail)
     ->  length(Owners, N),
@@ -691,6 +693,12 @@ load_room_state :-
         (   GS == none
         ->  true    % no game was running: nothing to restore
         ;   retractall(game(_)), assertz(game(GS))
+        ),
+        % Restore the round log (older state files without it load an
+        % empty log).
+        (   is_list(Log)
+        ->  retractall(round_log(_)), assertz(round_log(Log))
+        ;   true
         ),
         format(user_error, 'Persistent room state loaded: ~w seat(s)~n', [N])
     ;   format(user_error, 'No persistent room state found (fresh room)~n', [])
