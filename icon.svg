@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Tiến Lên app icon: spade on the green felt -->
+  <defs>
+    <radialGradient id="felt" cx="50%" cy="35%" r="80%">
+      <stop offset="0%" stop-color="#1d6f42"/>
+      <stop offset="60%" stop-color="#14532d"/>
+      <stop offset="100%" stop-color="#0c3a1e"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#felt)"/>
+  <!-- the spade -->
+  <path d="M256 96
+           C 216 156, 128 208, 128 288
+           a 64 64 0 0 0 108 46
+           l -18 66
+           h 76
+           l -18 -66
+           a 64 64 0 0 0 108 -46
+           C 384 208, 296 156, 256 96 Z"
+        fill="#ecf0f1"/>
+  <!-- the 3 of spades pip (the forced opening card) -->
+  <circle cx="256" cy="288" r="34" fill="#14532d"/>
+  <text x="256" y="302" font-family="-apple-system, sans-serif" font-size="44"
+        font-weight="700" fill="#ecf0f1" text-anchor="middle">3</text>
+</svg>
