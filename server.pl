@@ -228,6 +228,7 @@ register_at(Prefix) :-
     register_one(Prefix, ws, ws_with_token, [spawn([])]),
     register_one(Prefix, check, handle_check_room, []),
     register_one(Prefix, manifest, serve_manifest, []),
+    register_one(Prefix, 'admin-manifest', serve_admin_manifest, []),
     register_one(Prefix, admin, serve_admin_page, []),
     register_one(Prefix, 'admin/status', handle_admin_status, []),
     register_one(Prefix, 'admin/kick-all', handle_admin_kick, []),
@@ -263,6 +264,19 @@ serve_manifest(Request) :-
                       theme_color: '#12161e',
                       icons: [_{src: 'icon-192.png', sizes: '192x192', type: 'image/png'},
                               _{src: 'icon-512.png', sizes: '512x512', type: 'image/png',
+                                purpose: 'any maskable'}]}).
+
+% Admin manifest: same shape but the admin icon and name, so an admin
+% home-screen app is distinguishable from the player app.
+serve_admin_manifest(_Request) :-
+    reply_json_dict(_{name: 'Tiến Lên admin',
+                      short_name: 'TL admin',
+                      start_url: './admin',
+                      display: 'standalone',
+                      background_color: '#0a1520',
+                      theme_color: '#0a1520',
+                      icons: [_{src: 'admin-icon-192.png', sizes: '192x192', type: 'image/png'},
+                              _{src: 'admin-icon-512.png', sizes: '512x512', type: 'image/png',
                                 purpose: 'any maskable'}]}).
 
 register_one(Prefix, Path, Handler, Options) :-
