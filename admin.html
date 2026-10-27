@@ -247,6 +247,146 @@
             border: 1px solid rgba(241, 196, 15, 0.35);
         }
 
+        /* ---------- Floating panels (bottom corners) ---------- */
+
+        /* Raw JSON dump: bottom-left. */
+        .json-toggle {
+            position: fixed;
+            left: calc(16px + env(safe-area-inset-left));
+            bottom: calc(16px + env(safe-area-inset-bottom));
+            z-index: 60;
+            padding: 10px 16px;
+            border-radius: 999px;
+            font-size: 0.95em;
+            font-weight: 600;
+            background: rgba(0, 0, 0, 0.45);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            color: inherit;
+            cursor: pointer;
+        }
+
+        .json-toggle:hover {
+            background: rgba(0, 0, 0, 0.6);
+        }
+
+        .json-panel {
+            position: fixed;
+            left: calc(16px + env(safe-area-inset-left));
+            bottom: calc(64px + env(safe-area-inset-bottom));
+            z-index: 60;
+            width: min(480px, calc(100vw - 32px));
+            max-height: min(55vh, 480px);
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+            touch-action: pan-y;
+            margin: 0;
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: rgba(18, 22, 30, 0.97);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+            font-size: 0.75em;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-all;
+            cursor: pointer;
+        }
+
+        /* Round log: bottom-right, same as the player view. */
+        .log-toggle {
+            position: fixed;
+            right: calc(16px + env(safe-area-inset-right));
+            bottom: calc(16px + env(safe-area-inset-bottom));
+            z-index: 60;
+            padding: 10px 16px;
+            border-radius: 999px;
+            font-size: 0.95em;
+            font-weight: 600;
+            background: rgba(0, 0, 0, 0.45);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            color: inherit;
+            cursor: pointer;
+        }
+
+        .log-toggle:hover {
+            background: rgba(0, 0, 0, 0.6);
+        }
+
+        .log-panel {
+            position: fixed;
+            right: calc(16px + env(safe-area-inset-right));
+            bottom: calc(64px + env(safe-area-inset-bottom));
+            z-index: 60;
+            width: min(340px, calc(100vw - 32px));
+            max-height: min(55vh, 480px);
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+            touch-action: pan-y;
+            padding: 14px 16px;
+            border-radius: 14px;
+            background: rgba(18, 22, 30, 0.97);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .log-panel h3 {
+            margin: 0 0 10px;
+            font-size: 1em;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            opacity: 0.7;
+        }
+
+        .log-entry {
+            display: flex;
+            gap: 8px;
+            align-items: baseline;
+            padding: 4px 0;
+            font-size: 0.92em;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-entry .who {
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .log-entry .what {
+            opacity: 0.85;
+            word-break: break-word;
+            margin-left: auto;
+            text-align: right;
+            flex-shrink: 1;
+        }
+
+        .log-entry .card-text {
+            font-weight: 600;
+            font-size: 0.85em;
+            letter-spacing: 0.5px;
+            color: #d8dee0;
+        }
+
+        .log-entry .card-text.red {
+            color: #ff6b6b;
+        }
+
+        .log-entry.bomb .who,
+        .log-entry.bomb .what {
+            color: #ff9d6f;
+        }
+
+        .log-empty {
+            opacity: 0.5;
+            font-size: 0.9em;
+            padding: 8px 0;
+        }
+
         .actions {
             margin-top: 18px;
             display: flex;
@@ -375,6 +515,14 @@
         </div>
         <p id="feedback"></p>
     </main>
+
+    <!-- Raw game state dump: expands the full JSON, copies on click. -->
+    <button id="json-toggle" class="json-toggle" onclick="toggleJson()">{} JSON</button>
+    <pre id="json-panel" class="json-panel" hidden></pre>
+
+    <!-- Round log, same as the players see it. -->
+    <button id="log-toggle" class="log-toggle" hidden onclick="toggleLog()">📜 Log</button>
+    <div id="log-panel" class="log-panel" hidden></div>
 
     <script>
         // Same iOS standalone fix as client.js (this page does not load
@@ -541,15 +689,107 @@
         // Forward the admin key from this page's URL to the API calls.
         const key = new URLSearchParams(location.search).get('key') || '';
 
+        // The last fetched status, for the JSON dump and log rendering.
+        let lastStatus = null;
+
         async function refresh() {
             try {
                 const r = await fetch(base + '/admin/status' + (key ? '?key=' + encodeURIComponent(key) : ''));
                 const d = await r.json();
+                lastStatus = d;
                 renderStatus(d);
                 renderGame(d);
                 renderRoster(d);
                 renderScoreboard(d);
+                renderAdminLog(d);
             } catch (e) { /* server restarting */ }
+        }
+
+        // ---------- Round log (same rendering as the player view) ----------
+
+        function renderAdminLog(d) {
+            const toggle = document.getElementById('log-toggle');
+            const panel = document.getElementById('log-panel');
+            if (!toggle || !panel) return;
+            const running = d.game && d.game.running;
+            toggle.hidden = !running;
+            if (!running) {
+                panel.hidden = true;
+                return;
+            }
+            if (panel.hidden) return;   // only re-render when visible
+            panel.innerHTML = logHtml(d.game.move_log || []);
+        }
+
+        function toggleLog() {
+            const panel = document.getElementById('log-panel');
+            if (!panel) return;
+            panel.hidden = !panel.hidden;
+            if (!panel.hidden && lastStatus) {
+                const log = (lastStatus.game && lastStatus.game.move_log) || [];
+                panel.innerHTML = logHtml(log);
+                panel.scrollTop = panel.scrollHeight;
+            }
+        }
+
+        function logHtml(entries) {
+            if (!entries.length) {
+                return '<h3>This round</h3><div class="log-empty">No moves yet</div>';
+            }
+            const names = {};
+            (lastStatus.names || []).forEach(e => { names[e.seat] = e.name; });
+            const label = seat => names[seat] || ('Player ' + (seat + 1));
+            const rows = entries.map(e => {
+                const cards = (e.cards || []).map(c =>
+                    `<span class="card-text${isRed(c) ? ' red' : ''}">${rankText(c.rank)}${suitText(c.suit)}</span>`
+                ).join(' ');
+                const what = e.action === 'pass'
+                    ? 'passed'
+                    : e.bomb
+                        ? `💥 ${cards}`
+                        : cards;
+                return `<div class="log-entry${e.bomb ? ' bomb' : ''}">` +
+                    `<span class="who">${label(e.seat)}</span>` +
+                    `<span class="what">${what}</span>` +
+                    `</div>`;
+            }).join('');
+            return `<h3>This round</h3>${rows}`;
+        }
+
+        function isRed(card) {
+            return card && (card.suit === 'hearts' || card.suit === 'diamonds');
+        }
+
+        function rankText(rank) {
+            return { 11: 'J', 12: 'Q', 13: 'K', 14: 'A', 15: '2' }[rank] || rank;
+        }
+
+        function suitText(suit) {
+            return { hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' }[suit] || '';
+        }
+
+        // ---------- Raw JSON dump (auto-copies on click) ----------
+
+        function toggleJson() {
+            const panel = document.getElementById('json-panel');
+            if (!panel) return;
+            panel.hidden = !panel.hidden;
+            if (!panel.hidden && lastStatus) {
+                panel.textContent = JSON.stringify(lastStatus, null, 2);
+                copyJson();
+            }
+        }
+
+        async function copyJson() {
+            const fb = document.getElementById('feedback');
+            try {
+                await navigator.clipboard.writeText(JSON.stringify(lastStatus, null, 2));
+                fb.textContent = 'Game state copied to clipboard';
+            } catch (e) {
+                // Clipboard API needs a user gesture / https; the panel
+                // content is selectable as a fallback.
+                fb.textContent = 'Clipboard blocked - select the text manually';
+            }
         }
 
         async function kickAll() {

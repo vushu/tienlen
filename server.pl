@@ -346,10 +346,11 @@ handle_admin_status(Request) :-
             % Full hands as JSON (admin debugging: reproduce disputed
             % game states, e.g. a forced pass that should not be).
             maplist(hand_json, Hands, HandsJ),
+            round_log(Log),
             Game = _{running:true, turn:P, action:Action, cards_in_play:CIPJ,
                      discarded_cards:DCJ,
                      hand_counts:HandCounts, player_states:PlayerStates, scoreboard:SB,
-                     hands:HandsJ}
+                     hands:HandsJ, move_log:Log}
         ;   (   last_scoreboard(SB)
             ->  true
             ;   SB = []
