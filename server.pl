@@ -454,12 +454,16 @@ handle_kick_one(spec, Seat) :-
     ).
 
 % Admin page: a static page (admin.html) served from the repo root; it
-% polls /admin/status for the live game state and scoreboard.
+% polls /admin/status for the live game state and scoreboard. Sends
+% Cache-Control: no-cache like the static file server, so a stale
+% cached admin page (e.g. from before a safe-area fix) is revalidated.
 serve_admin_page(Request) :-
     (   authorized_admin(Request)
     ->  static_root(Root),
         directory_file_path(Root, 'admin.html', AdminFile),
-        http_reply_file(AdminFile, [unsafe(true)], Request)
+        http_reply_file(AdminFile,
+                        [unsafe(true), headers([cache_control('no-cache')])],
+                        Request)
     ;   % Ask for the key via basic-style prompt, or show a hint.
         reply_html_page(title('TienLen admin'),
                         [ h1('TienLen admin')

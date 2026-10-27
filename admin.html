@@ -10,6 +10,15 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <link rel="icon" type="image/svg+xml" href="icon.svg">
+    <script>
+        // Service worker: cached app shell, same as the player page.
+        if ('serviceWorker' in navigator
+            && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+            navigator.serviceWorker.register('sw.js');
+        }
+    </script>
     <style>
         * {
             box-sizing: border-box;
