@@ -17,7 +17,7 @@
 %
 % Run with: swipl server.pl   (or ./run)
 
-:- module(server, [start/0, handle_ws/4, handle_message/2, handle_move/2, handle_kick_all/0, apply_move/3, settle/2, place_term/2, game_is_over/1, extract_player_index/2, client_action_allowed/2, start_new_game/0, update_game/1, broadcast/1, player_view/3, send_json/2, seat_client/4, remove_client/1, players/1, game/1, handle_player_left/2, broadcast_event/2, broadcast_event/3, bomb_beaten/2, bomb_beaten/3]).
+:- module(server, [start/0, handle_ws/4, handle_message/2, handle_move/2, handle_kick_all/0, apply_move/3, settle/2, place_term/2, game_is_over/1, extract_player_index/2, client_action_allowed/2, start_new_game/0, update_game/1, broadcast/1, player_view/3, send_json/2, seat_client/4, remove_client/1, players/1, game/1, handle_player_left/2, broadcast_event/2, broadcast_event/3, bomb_beaten/3]).
 :- use_module(library(http/http_server)).
 :- use_module(library(http/websocket)).
 :- use_module(library(http/http_files)).
@@ -1344,10 +1344,14 @@ handle_move(WS, Dict) :-
             ->  (   client_action_allowed(GS, Dict),
                     apply_move(Dict, GS, NewGS)
                 ->  (   Dict.action == pass
-                    ->  broadcast_event(passed, Seat)   % animate the pass
+                    ->  broadcast_event(passed, Seat),   % animate the pass
+                        log_move(Seat, pass, [], false)
                     ;   bomb_beaten(GS, Dict, Kind)
-                    ->  broadcast_event(bombed, Seat, Kind)   % a 2 was bombed!
-                    ;   true
+                    ->  broadcast_event(bombed, Seat, Kind),   % a 2 was bombed!
+                        move_cards(Dict, Cards),
+                        log_move(Seat, place, Cards, true)
+                    ;   move_cards(Dict, Cards),
+                        log_move(Seat, place, Cards, false)
                     ),
                     update_game(NewGS)
                 ;   send_json(WS, json([type=error, message=illegal_move]))
@@ -1404,6 +1408,38 @@ broadcast_event(Event, Seat) :-
 :- dynamic bomb_event/3.   % bomb_event(Id, Seat, Kind)
 :- dynamic bomb_seq/1.
 bomb_seq(0).
+
+% Round move log: every move this round (seat, action, cards, bomb flag).
+% Cleared when a new game starts; sent to clients as part of the game
+% view so reconnectors see the full round history.
+:- dynamic round_log/1.   % round_log(Entries) - newest last
+round_log([]).
+
+% Append a move to the round log. Bomb is true/false so the client can
+% highlight bombs in the log.
+log_move(Seat, Action, Cards, Bomb) :-
+    round_log(Entries),
+    append(Entries, [json([seat=Seat, action=Action, cards=Cards, bomb=Bomb])], New),
+    retractall(round_log(_)),
+    assertz(round_log(New)).
+
+% The cards of a placement as JSON-friendly terms (empty for passes).
+move_cards(Dict, Cards) :-
+    (   Dict.action == pass
+    ->  Cards = []
+    ;   place_term(Dict.action.place, Place),
+        place_cards(Place, Cards)
+    ).
+
+% The card list of any combination term.
+place_cards(single(card(R, S)), [json([rank=R, suit=S])]).
+place_cards(pair(Cards), CardJs) :- maplist(card_json, Cards, CardJs).
+place_cards(three_of_kind(Cards), CardJs) :- maplist(card_json, Cards, CardJs).
+place_cards(four_of_kind(Cards), CardJs) :- maplist(card_json, Cards, CardJs).
+place_cards(sequence(Cards), CardJs) :- maplist(card_json, Cards, CardJs).
+place_cards(double_sequence(Cards), CardJs) :- maplist(card_json, Cards, CardJs).
+
+card_json(card(R, S), json([rank=R, suit=S])).
 
 next_bomb_id(Id) :-
     retract(bomb_seq(N)),
@@ -1528,6 +1564,8 @@ start_new_game :-
     % A new deal: no bombs from the previous game carry over.
     retractall(bomb_event(_, _, _)),
     retractall(bomb_seq(_)), assertz(bomb_seq(0)),
+    % ...and the round log starts fresh.
+    retractall(round_log(_)), assertz(round_log([])),
     % A new game clears the kick bans: everyone may seat again.
     retractall(kicked_session(_)),
     players(Players),
@@ -1633,7 +1671,9 @@ player_view(GS, Seat, json(Pairs)) :-
     % button to spectators only while there is room).
     players(Players),
     length(Players, Seated),
-    append(Pairs0, [your_seat=Seat, seated=Seated, persistent=persistent_mode], Pairs).
+    round_log(Log),
+    append(Pairs0, [your_seat=Seat, seated=Seated, persistent=persistent_mode,
+                     move_log=Log], Pairs).
 
 hide_hands(game_state(Hands, PlayerStates, CIP, DC, A, SB, NM), Seat,
            game_state(ViewHands, PlayerStates, CIP, DC, A, SB, NM)) :-

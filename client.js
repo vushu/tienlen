@@ -155,6 +155,9 @@ function connectSocket() {
             document.getElementById('cleared-notice').hidden = true;
             document.getElementById('cards-in-play-container').innerHTML = '';
             document.getElementById('hands-container').innerHTML = '';
+            // Back in the lobby: the round log makes no sense either.
+            document.getElementById('log-toggle').hidden = true;
+            document.getElementById('log-panel').hidden = true;
             // No game: Place/Pass and Sort make no sense in the lobby.
             document.querySelector('.main-actions').style.display = 'none';
             document.getElementById('sort-actions').style.display = 'none';
@@ -279,6 +282,7 @@ function connectSocket() {
         document.getElementById('pass-btn').classList.toggle('primary', forcedPass);
         renderGameOver(data);
         renderClearedNotice(data);
+        renderRoundLog(data);
     };
 
     socket.onerror = (error) => {
@@ -752,6 +756,68 @@ function renderClearedNotice(data) {
     if (clearedToYou) {
         el.textContent = "It's your turn again — the other players passed";
     }
+}
+
+// Round log: the history of the current round (who did what, in order).
+// A button in the bottom-right corner toggles the panel; the log only
+// exists while a round is running (cleared on each new deal).
+function renderRoundLog(data) {
+    const toggle = document.getElementById('log-toggle');
+    const panel = document.getElementById('log-panel');
+    if (!toggle || !panel) return;
+    const entries = Array.isArray(data.move_log) ? data.move_log : [];
+    // No game (lobby): hide the log entirely.
+    if (!data.hands) {
+        toggle.hidden = true;
+        panel.hidden = true;
+        return;
+    }
+    toggle.hidden = false;
+    if (panel.hidden) return;   // only re-render when visible
+    panel.innerHTML = logHtml(entries);
+}
+
+function toggleLog() {
+    const panel = document.getElementById('log-panel');
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden && receivedData) {
+        const entries = Array.isArray(receivedData.move_log) ? receivedData.move_log : [];
+        panel.innerHTML = logHtml(entries);
+        panel.scrollTop = panel.scrollHeight;   // newest at the bottom
+    }
+}
+
+function logHtml(entries) {
+    if (!entries.length) {
+        return '<h3>This round</h3><div class="log-empty">No moves yet</div>';
+    }
+    const rows = entries.map(e => {
+        const who = seatLabel(e.seat);
+        const cards = (e.cards || []).map(c =>
+            `<span class="mini-card${isRed(c) ? ' red' : ''}">${rankText(c.rank)}${suitText(c.suit)}</span>`
+        ).join('');
+        const what = e.action === 'pass'
+            ? 'passed'
+            : `played ${cards}`;
+        return `<div class="log-entry${e.bomb ? ' bomb' : ''}">` +
+            `<span class="who">${who}</span>` +
+            `<span class="what">${what}${e.bomb ? ' 💥' : ''}</span>` +
+            `</div>`;
+    }).join('');
+    return `<h3>This round</h3>${rows}`;
+}
+
+function isRed(card) {
+    return card && (card.suit === 'hearts' || card.suit === 'diamonds');
+}
+
+function rankText(rank) {
+    return { 11: 'J', 12: 'Q', 13: 'K', 14: 'A', 15: '2' }[rank] || rank;
+}
+
+function suitText(suit) {
+    return { hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' }[suit] || '';
 }
 
 function drawCard(card, faded = false) {
