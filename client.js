@@ -866,19 +866,20 @@ function logHtml(entries) {
     }
     const rows = entries.map(e => {
         const who = seatLabel(e.seat);
+        // Cards as plain text (e.g. "4♠ 4♥"), colored red/black by suit.
         const cards = (e.cards || []).map(c =>
-            `<span class="mini-card${isRed(c) ? ' red' : ''}">${rankText(c.rank)}${suitText(c.suit)}</span>`
-        ).join('');
+            `<span class="card-text${isRed(c) ? ' red' : ''}">${rankText(c.rank)}${suitText(c.suit)}</span>`
+        ).join(' ');
         // Placements show just the cards (playing is implicit); only
         // passes get a word. Bombs lead with the word, plain text.
         const what = e.action === 'pass'
             ? 'passed'
             : e.bomb
-                ? `bombed <span class="mini-cards">${cards}</span>`
-                : `<span class="mini-cards">${cards}</span>`;
+                ? `bombed ${cards}`
+                : cards;
         return `<div class="log-entry${e.bomb ? ' bomb' : ''}">` +
             `<span class="who">${who}</span>` +
-            `<span class="what">${what}${e.bomb ? ' 💥' : ''}</span>` +
+            `<span class="what">${what}</span>` +
             `</div>`;
     }).join('');
     return `<h3>This round</h3>${rows}`;
