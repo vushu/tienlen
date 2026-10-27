@@ -799,7 +799,13 @@ remove_client(WS) :-
     retractall(dead_socket(WS)),          % final removal: forget the marker
     retractall(ws_token(WS, _)),
     retractall(ws_ident(WS, _)),
-    retractall(player_name(WS, _)),
+    (   persistent_mode
+    ->  % Persistent room: the seat (and its alias) survives the
+        % disconnect - the owner reclaims it on return. Keep the name
+        % so the roster, log and toasts keep showing who sits there.
+        true
+    ;   retractall(player_name(WS, _))
+    ),
     retractall(last_seen(WS, _)),          % no heartbeat to track anymore
     retractall(seat_declined(_, WS)),     % their seat declinations are moot
     players(List),
