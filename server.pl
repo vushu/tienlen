@@ -17,7 +17,7 @@
 %
 % Run with: swipl server.pl   (or ./run)
 
-:- module(server, [start/0, handle_ws/4, handle_message/2, handle_move/2, handle_kick_all/0, apply_move/3, settle/2, place_term/2, game_is_over/1, extract_player_index/2, client_action_allowed/2, start_new_game/0, update_game/1, broadcast/1, player_view/3, send_json/2, seat_client/4, remove_client/1, players/1, game/1, handle_player_left/2, broadcast_event/2, broadcast_event/3, bomb_beaten/3]).
+:- module(server, [start/0, server_port/1, handle_ws/4, handle_message/2, handle_move/2, handle_kick_all/0, apply_move/3, settle/2, place_term/2, game_is_over/1, extract_player_index/2, client_action_allowed/2, start_new_game/0, update_game/1, broadcast/1, player_view/3, send_json/2, seat_client/4, remove_client/1, players/1, game/1, handle_player_left/2, broadcast_event/2, broadcast_event/3, bomb_beaten/3]).
 :- use_module(library(http/http_server)).
 :- use_module(library(http/websocket)).
 :- use_module(library(http/http_files)).
@@ -156,16 +156,27 @@ authorized_admin(Request) :-
         Header == Expected
     ).
 
+% The port to listen on: TIENLEN_PORT env var, default 8080. (The
+% --port command line option only works in daemon mode; the env var
+% covers the foreground `start` used by run.sh.) Env vars arrive as
+% atoms, so convert to an integer for http_server/1.
+server_port(Port) :-
+    getenv('TIENLEN_PORT', PortAtom), PortAtom \== '',
+    catch(atom_number(PortAtom, Port), _, fail),
+    !.
+server_port(8080).
+
 start :-
     register_routes,
     load_room_state,
+    server_port(Port),
     % Listen on IPv6 any first (on macOS it accepts v4-mapped connections
     % too), falling back to plain IPv4. This keeps the server reachable
     % from same-Wi-Fi devices via link-local IPv6 even when a corporate
     % VPN hijacks IPv4 routing.
-    (   catch(http_server([port(8080), bind('::')]), _, fail)
+    (   catch(http_server([port(Port), bind('::')]), _, fail)
     ->  format(user_error, 'Listening on IPv6 (dual-stack)~n', [])
-    ;   http_server([port(8080)]),
+    ;   http_server([port(Port)]),
         format(user_error, 'Listening on IPv4~n', [])
     ),
     (   room_code(C), C == none
