@@ -448,7 +448,24 @@
                 const cards = c.type === 'single' ? [c.card] : c.cards;
                 cards.forEach(cd => cip.appendChild(cardEl(cd)));
             } else {
-                cip.innerHTML = '<span style="opacity:0.5">table empty</span>';
+                // Table empty: show the last cleared pile faded (same as
+                // the player view) so the admin sees what just cleared.
+                const dc = d.game.discarded_cards;
+                const last = dc && dc.length ? dc[dc.length - 1] : null;
+                if (last && last !== 'none') {
+                    const cards = last.type === 'single' ? [last.card] : last.cards;
+                    cards.forEach(cd => {
+                        const el = cardEl(cd);
+                        el.style.opacity = '0.45';
+                        cip.appendChild(el);
+                    });
+                    const note = document.createElement('span');
+                    note.style.cssText = 'opacity:0.5;margin-left:8px';
+                    note.textContent = 'cleared';
+                    cip.appendChild(note);
+                } else {
+                    cip.innerHTML = '<span style="opacity:0.5">table empty</span>';
+                }
             }
         }
 

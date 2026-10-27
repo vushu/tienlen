@@ -339,13 +339,15 @@ handle_admin_status(Request) :-
                 DeadSeats),
         findall(Entry, roster_entry(Entry), Roster),
         (   game(GS)
-        ->  GS = game_state(Hands, PlayerStates, CIP, _DC, _A, SB, next_move(P, Action)),
+        ->  GS = game_state(Hands, PlayerStates, CIP, DC, _A, SB, next_move(P, Action)),
             maplist(length, Hands, HandCounts),
             json_convert:prolog_to_json(CIP, CIPJ, server),
+            json_convert:prolog_to_json(DC, DCJ, server),
             % Full hands as JSON (admin debugging: reproduce disputed
             % game states, e.g. a forced pass that should not be).
             maplist(hand_json, Hands, HandsJ),
             Game = _{running:true, turn:P, action:Action, cards_in_play:CIPJ,
+                     discarded_cards:DCJ,
                      hand_counts:HandCounts, player_states:PlayerStates, scoreboard:SB,
                      hands:HandsJ}
         ;   (   last_scoreboard(SB)
