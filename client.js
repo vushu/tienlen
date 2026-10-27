@@ -425,6 +425,26 @@ document.addEventListener('click', function requestNotify() {
     }
 }, { once: true });
 
+// iOS standalone bug: env(safe-area-inset-*) can report 0 in home-screen
+// apps even with viewport-fit=cover (WebKit quirk). Measure it with a
+// probe; when it lies, fall back to a fixed status-bar height via a
+// class on <html>.
+function fixSafeArea() {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+        || window.navigator.standalone === true;
+    if (!isStandalone) return;
+    const probe = document.createElement('div');
+    probe.style.cssText =
+        'position:fixed;top:0;height:env(safe-area-inset-top);visibility:hidden;pointer-events:none;';
+    document.body.appendChild(probe);
+    const inset = probe.getBoundingClientRect().height;
+    probe.remove();
+    if (inset < 20) {   // 0 or implausibly small: the env() is lying
+        document.documentElement.classList.add('no-safe-area');
+    }
+}
+fixSafeArea();
+
 // The display label for a seat: the player's alias if set, else
 // "Player N". Spectators (seat -1) have no number.
 function seatLabel(seat) {

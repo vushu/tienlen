@@ -34,6 +34,22 @@
             padding-bottom: env(safe-area-inset-bottom);
         }
 
+        /* iOS standalone bug: env(safe-area-inset-top) reports 0 in
+           home-screen apps on some versions, so the header slides under
+           the status bar. The client detects this (fixSafeArea) and sets
+           this class with a fixed notch height instead. */
+        html.no-safe-area body {
+            padding-top: 59px;   /* iPhone notch + status bar */
+        }
+
+        html.no-safe-area header {
+            top: 59px;
+        }
+
+        html.no-safe-area .connection-status {
+            top: 59px;
+        }
+
         /* ---------- Header ---------- */
 
         header {
