@@ -232,10 +232,13 @@ register_at(Prefix) :-
     register_one(Prefix, 'admin/kick-all', handle_admin_kick, []),
     register_one(Prefix, 'admin/kick', handle_admin_kick_one, []),
     register_one(Prefix, 'admin/restart', handle_admin_restart, []),
-    % File server: serves the game files from the repo root.
+    % File server: serves the game files from the repo root with
+    % Cache-Control: no-cache so browsers revalidate (cheap 304s)
+    % instead of serving a stale client.js after a deploy - a cached
+    % old client caused "it still prompts" bugs.
     static_root(Root),
     Spec =.. [Prefix, '.'],
-    Closure =.. [http_reply_from_files, Root, []],
+    Closure =.. [http_reply_from_files, Root, [headers([cache_control('no-cache')])]],
     http_handler(Spec, Closure, [prefix]).
 
 register_one(Prefix, Path, Handler, Options) :-
