@@ -70,6 +70,16 @@
             margin-bottom: 14px;
         }
 
+        /* The scoreboard grows with every round: cap it and scroll
+           inside, so the action buttons below stay reachable. */
+        #scoreboard {
+            max-height: 40vh;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+            touch-action: pan-y;
+        }
+
         h2 {
             margin: 0 0 10px;
             font-size: 1em;

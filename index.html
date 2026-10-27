@@ -600,6 +600,13 @@
             display: flex;
             flex-direction: column;
             gap: 4px;
+            /* Long games accumulate many rounds: cap the history and
+               scroll inside it, so the action buttons stay in view. */
+            max-height: 30vh;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+            touch-action: pan-y;
         }
 
         #game-over .round-row {
