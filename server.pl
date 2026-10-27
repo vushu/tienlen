@@ -17,7 +17,7 @@
 %
 % Run with: swipl server.pl   (or ./run)
 
-:- module(server, [start/0, handle_ws/4, handle_message/2, handle_move/2, handle_kick_all/0, apply_move/3, settle/2, place_term/2, game_is_over/1, extract_player_index/2, client_action_allowed/2, start_new_game/0, update_game/1, broadcast/1, player_view/3, send_json/2, seat_client/4, remove_client/1, players/1, game/1, handle_player_left/2, broadcast_event/2, bomb_beaten/2]).
+:- module(server, [start/0, handle_ws/4, handle_message/2, handle_move/2, handle_kick_all/0, apply_move/3, settle/2, place_term/2, game_is_over/1, extract_player_index/2, client_action_allowed/2, start_new_game/0, update_game/1, broadcast/1, player_view/3, send_json/2, seat_client/4, remove_client/1, players/1, game/1, handle_player_left/2, broadcast_event/2, broadcast_event/3, bomb_beaten/2, bomb_beaten/3]).
 :- use_module(library(http/http_server)).
 :- use_module(library(http/websocket)).
 :- use_module(library(http/http_files)).
@@ -1345,8 +1345,8 @@ handle_move(WS, Dict) :-
                     apply_move(Dict, GS, NewGS)
                 ->  (   Dict.action == pass
                     ->  broadcast_event(passed, Seat)   % animate the pass
-                    ;   bomb_beaten(GS, Dict)
-                    ->  broadcast_event(bombed, Seat)   % a 2 was bombed!
+                    ;   bomb_beaten(GS, Dict, Kind)
+                    ->  broadcast_event(bombed, Seat, Kind)   % a 2 was bombed!
                     ;   true
                     ),
                     update_game(NewGS)
@@ -1361,36 +1361,37 @@ handle_move(WS, Dict) :-
 
 % True when the move bombs a 2: the placed combination is a four-of-a-kind
 % or a double sequence beating a single 2 or pair of 2s (the engine's
-% special "bomb" rules).
-bomb_beaten(GS, Dict) :-
+% special "bomb" rules). Kind says what was bombed, for the animation.
+bomb_beaten(GS, Dict, Kind) :-
     GS = game_state(_, _, CardsInPlay, _, _, _, _),
     Dict.action \== pass,
     place_term(Dict.action.place, Place),
-    bombing_combination(CardsInPlay, Place).
+    bombing_combination(CardsInPlay, Place, Kind).
 
 % Four of a kind bombs a single 2; double sequences bomb 2s per length:
 % any length for a single 2, exactly 8 for a pair, exactly 10 for a triple.
-bombing_combination(single(card(2, _)), four_of_kind(_)).
-bombing_combination(single(card(2, _)), double_sequence(_)).
-bombing_combination(pair([card(2, _), card(2, _)]), double_sequence(Cards)) :-
+bombing_combination(single(card(2, _)), four_of_kind(_), single).
+bombing_combination(single(card(2, _)), double_sequence(_), single).
+bombing_combination(pair([card(2, _), card(2, _)]), double_sequence(Cards), pair) :-
     length(Cards, 8).
 bombing_combination(three_of_kind([card(2, _), card(2, _), card(2, _)]),
-                     double_sequence(Cards)) :-
+                     double_sequence(Cards), triple) :-
     length(Cards, 10).
 
 % A transient event (not game state): clients animate it and discard it.
 % Bombs are also recorded (with a sequence number) so clients that were
 % away can replay them on return: "you bombed my 2 while I was gone"
 % should still explode when I open the page again.
-broadcast_event(bombed, Seat) :-
+broadcast_event(bombed, Seat, Kind) :-
     !,
     next_bomb_id(Id),
-    assertz(bomb_event(Id, Seat)),
+    assertz(bomb_event(Id, Seat, Kind)),
     trim_bomb_history,
     players(Players),
     spectators(Specs),
     forall((member(WS, Players) ; member(WS, Specs)),
-           send_json(WS, json([type=event, event=bombed, seat=Seat, bomb_id=Id]))).
+           send_json(WS, json([type=event, event=bombed, seat=Seat,
+                               bomb_id=Id, bomb_kind=Kind]))).
 broadcast_event(Event, Seat) :-
     players(Players),
     spectators(Specs),
@@ -1400,7 +1401,7 @@ broadcast_event(Event, Seat) :-
 % Bomb history: every bomb gets a monotonically increasing id. Clients
 % report the highest id they have seen; on (re)connect the server sends
 % everything newer. Cleared when a new game starts.
-:- dynamic bomb_event/2.   % bomb_event(Id, Seat)
+:- dynamic bomb_event/3.   % bomb_event(Id, Seat, Kind)
 :- dynamic bomb_seq/1.
 bomb_seq(0).
 
@@ -1413,21 +1414,21 @@ next_bomb_id(Id) :-
 % Keep the history bounded: only the recent bombs matter for replay
 % (a returning player sees the last few, not the whole game's).
 trim_bomb_history :-
-    findall(Id, bomb_event(Id, _), Ids),
+    findall(Id, bomb_event(Id, _, _), Ids),
     length(Ids, Count),
     (   Count > 20
     ->  sort(Ids, Sorted),
         Keep is Count - 20,
         nth0(Keep, Sorted, Cutoff),
-        forall((bomb_event(Id, _), Id =< Cutoff), retractall(bomb_event(Id, _)))
+        forall((bomb_event(Id, _, _), Id =< Cutoff), retractall(bomb_event(Id, _, _)))
     ;   true
     ).
 
 % Send the bombs a client has not seen yet (those with a higher id than
 % their last seen). Called on (re)connect and on the client's request.
 send_missed_bombs(WS, LastSeen) :-
-    findall(json([type=event, event=bombed, seat=Seat, bomb_id=Id]),
-            (   bomb_event(Id, Seat),
+    findall(json([type=event, event=bombed, seat=Seat, bomb_id=Id, bomb_kind=Kind]),
+            (   bomb_event(Id, Seat, Kind),
                 Id > LastSeen
             ),
             Missed),
@@ -1525,7 +1526,7 @@ start_new_game :-
     % for the connected players only (seats re-align to connection order).
     prune_left_seats,
     % A new deal: no bombs from the previous game carry over.
-    retractall(bomb_event(_, _)),
+    retractall(bomb_event(_, _, _)),
     retractall(bomb_seq(_)), assertz(bomb_seq(0)),
     % A new game clears the kick bans: everyone may seat again.
     retractall(kicked_session(_)),

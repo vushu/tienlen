@@ -559,16 +559,16 @@ test(decline_seat_keeps_spectator) :-
 test(bomb_replay_for_returning_clients) :-
     server:retractall(players(_)), server:assertz(players([fake_ws_0, fake_ws_1])),
     server:retractall(spectators(_)), server:assertz(spectators([])),
-    server:retractall(bomb_event(_, _)),
+    server:retractall(bomb_event(_, _, _)),
     server:retractall(bomb_seq(_)), server:assertz(bomb_seq(0)),
     server:retractall(game(_)),
     server:retractall(dead_socket(_)),
-    broadcast_event(bombed, 0),
-    server:bomb_event(Id, 0), Id == 1,
-    findall(B, (server:bomb_event(B, _), B > 0), Missed), Missed == [1],
-    findall(B, (server:bomb_event(B, _), B > 1), Current), Current == [],
+    broadcast_event(bombed, 0, single),
+    server:bomb_event(Id, 0, single), Id == 1,
+    findall(B, (server:bomb_event(B, _, _), B > 0), Missed), Missed == [1],
+    findall(B, (server:bomb_event(B, _, _), B > 1), Current), Current == [],
     catch(start_new_game, _, true),
-    \+ server:bomb_event(_, _),
+    \+ server:bomb_event(_, _, _),
     cleanup_fake_game.
 
 % Accepting a seat offer for a seat that no longer exists (the lobby
@@ -587,49 +587,49 @@ test(bomb_beaten_four_of_kind_on_single_2) :-
     GS = game_state([[card(3,spades)],[card(4,hearts)]], [in_play,in_play],
                     single(card(2,spades)), [], 1, [], next_move(0, make_move)),
     atom_json_dict('{"type":"move","action":{"place":{"type":"four_of_kind","cards":[{"rank":3,"suit":"hearts"},{"rank":3,"suit":"diamonds"},{"rank":3,"suit":"clubs"},{"rank":3,"suit":"spades"}]}}}', D, [value_string_as(atom)]),
-    bomb_beaten(GS, D).
+    bomb_beaten(GS, D, _).
 
 % A double sequence of 8 on a single 2 counts.
 test(bomb_beaten_double_sequence_on_single_2) :-
     GS = game_state([[card(3,spades)],[card(4,hearts)]], [in_play,in_play],
                     single(card(2,spades)), [], 1, [], next_move(0, make_move)),
     atom_json_dict('{"type":"move","action":{"place":{"type":"double_sequence","cards":[{"rank":3,"suit":"hearts"},{"rank":3,"suit":"diamonds"},{"rank":4,"suit":"hearts"},{"rank":4,"suit":"diamonds"},{"rank":5,"suit":"hearts"},{"rank":5,"suit":"diamonds"},{"rank":6,"suit":"hearts"},{"rank":6,"suit":"diamonds"}]}}}', D, [value_string_as(atom)]),
-    bomb_beaten(GS, D).
+    bomb_beaten(GS, D, _).
 
 % A double sequence of exactly 8 bombs a pair of 2s.
 test(bomb_beaten_double_sequence_on_pair_of_2s) :-
     GS = game_state([[card(3,spades)],[card(4,hearts)]], [in_play,in_play],
                     pair([card(2,spades),card(2,hearts)]), [], 1, [], next_move(0, make_move)),
     atom_json_dict('{"type":"move","action":{"place":{"type":"double_sequence","cards":[{"rank":3,"suit":"hearts"},{"rank":3,"suit":"diamonds"},{"rank":4,"suit":"hearts"},{"rank":4,"suit":"diamonds"},{"rank":5,"suit":"hearts"},{"rank":5,"suit":"diamonds"},{"rank":6,"suit":"hearts"},{"rank":6,"suit":"diamonds"}]}}}', D, [value_string_as(atom)]),
-    bomb_beaten(GS, D).
+    bomb_beaten(GS, D, _).
 
 % A double sequence of exactly 10 bombs a three of a kind of 2s.
 test(bomb_beaten_double_sequence_on_three_2s) :-
     GS = game_state([[card(3,spades)],[card(4,hearts)]], [in_play,in_play],
                     three_of_kind([card(2,spades),card(2,hearts),card(2,diamonds)]), [], 1, [], next_move(0, make_move)),
     atom_json_dict('{"type":"move","action":{"place":{"type":"double_sequence","cards":[{"rank":3,"suit":"hearts"},{"rank":3,"suit":"diamonds"},{"rank":4,"suit":"hearts"},{"rank":4,"suit":"diamonds"},{"rank":5,"suit":"hearts"},{"rank":5,"suit":"diamonds"},{"rank":6,"suit":"hearts"},{"rank":6,"suit":"diamonds"},{"rank":7,"suit":"hearts"},{"rank":7,"suit":"diamonds"}]}}}', D, [value_string_as(atom)]),
-    bomb_beaten(GS, D).
+    bomb_beaten(GS, D, _).
 
 % A four-of-a-kind does NOT bomb a pair of 2s (only double sequences do).
 test(no_bomb_four_of_kind_on_pair_of_2s) :-
     GS = game_state([[card(3,spades)],[card(4,hearts)]], [in_play,in_play],
                     pair([card(2,spades),card(2,hearts)]), [], 1, [], next_move(0, make_move)),
     atom_json_dict('{"type":"move","action":{"place":{"type":"four_of_kind","cards":[{"rank":3,"suit":"hearts"},{"rank":3,"suit":"diamonds"},{"rank":3,"suit":"clubs"},{"rank":3,"suit":"spades"}]}}}', D, [value_string_as(atom)]),
-    \+ bomb_beaten(GS, D).
+    \+ bomb_beaten(GS, D, _).
 
 % A normal place on a 2 (e.g. a higher single) is NOT a bomb.
 test(no_bomb_for_normal_beat) :-
     GS = game_state([[card(3,spades)],[card(4,hearts)]], [in_play,in_play],
                     single(card(2,spades)), [], 1, [], next_move(0, make_move)),
     move_dict(pass, D),
-    \+ bomb_beaten(GS, D).
+    \+ bomb_beaten(GS, D, _).
 
 % A four-of-a-kind on a non-2 card is NOT a bomb.
 test(no_bomb_on_regular_card) :-
     GS = game_state([[card(3,spades)],[card(4,hearts)]], [in_play,in_play],
                     single(card(4,spades)), [], 1, [], next_move(0, make_move)),
     atom_json_dict('{"type":"move","action":{"place":{"type":"four_of_kind","cards":[{"rank":3,"suit":"hearts"},{"rank":3,"suit":"diamonds"},{"rank":3,"suit":"clubs"},{"rank":3,"suit":"spades"}]}}}', D, [value_string_as(atom)]),
-    \+ bomb_beaten(GS, D).
+    \+ bomb_beaten(GS, D, _).
 
 % Each player sees their own hand in full; other hands become null
 % placeholders (one per card) and the view carries your_seat.
@@ -664,7 +664,7 @@ cleanup_fake_game :-
     server:retractall(seat_declined(_, _)),
     server:retractall(left_seats(_)), server:assertz(left_seats([])),
     server:retractall(dead_socket(_)),
-    server:retractall(bomb_event(_, _)),
+    server:retractall(bomb_event(_, _, _)),
     server:retractall(bomb_seq(_)), server:assertz(bomb_seq(0)),
     server:retractall(previous_winner(_, _)), server:asserta(previous_winner(none, none)).
 

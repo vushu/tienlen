@@ -198,7 +198,7 @@ function connectSocket() {
             if (data.event === 'joined') spawnJoinedToast(data.seat);
             if (data.event === 'promoted') spawnPromotedToast(data.seat);
             if (data.event === 'bombed') {
-                spawnBombAnimation(data.seat);
+                spawnBombAnimation(data.seat, data.bomb_kind);
                 // Remember the highest bomb id: the server replays
                 // anything newer when we reconnect.
                 if (typeof data.bomb_id === 'number') {
@@ -619,7 +619,7 @@ function stopGraceCountdown() {
 }
 
 // A 2 was bombed: explosion animation over the table.
-function spawnBombAnimation(seat) {
+function spawnBombAnimation(seat, kind) {
     const table = document.getElementById('table');
     if (!table) return;
     const rect = table.getBoundingClientRect();
@@ -629,10 +629,12 @@ function spawnBombAnimation(seat) {
     bomb.style.left = (rect.left + rect.width / 2) + 'px';
     bomb.style.top = (rect.top + rect.height / 2) + 'px';
     document.body.appendChild(bomb);
-    // the banner with the bomber's name
+    // the banner with the bomber's name; what was bombed depends on
+    // the kind (single 2, pair of 2s, or triple 2s)
+    const target = { pair: 'the PAIR of 2s', triple: 'the TRIPLE 2s' }[kind] || 'the 2';
     const banner = document.createElement('div');
     banner.className = 'bomb-banner';
-    banner.textContent = `${seatLabel(seat)} BOMBED the 2!`;
+    banner.textContent = `${seatLabel(seat)} BOMBED ${target}!`;
     document.body.appendChild(banner);
     setTimeout(() => bomb.remove(), 1400);
     setTimeout(() => banner.remove(), 2400);
