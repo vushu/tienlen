@@ -164,7 +164,10 @@
         }
 
         .player-row .name {
-            min-width: 90px;
+            /* Names are capped at 12 chars server-side: size the
+               column for the max so badges align at a fixed edge. */
+            width: 11em;
+            flex-shrink: 0;
             font-weight: 600;
         }
 
