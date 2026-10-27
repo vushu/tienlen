@@ -641,7 +641,7 @@
             } else {
                 for (let i = 0; i < d.seated; i++) {
                     const cards = d.game.running && d.game.hand_counts[i] !== undefined
-                        ? d.game.hand_counts[i] + ' cards' : 'seated';
+                        ? d.game.hand_counts[i] + ' cards' : '';
                     const name = names[i] || ('Player ' + (i + 1));
                     const dead = d.disconnected && d.disconnected.includes(i);
                     html += '<div class=player-row><span class=name>' + name +
