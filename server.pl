@@ -216,6 +216,14 @@ register_routes :-
 % Register handlers at a location prefix. The location specs (e.g.
 % root(admin)) are built with =.. because the prefix is only known at
 % runtime when hosting under a subpath.
+% The directory the static files (index.html, client.js, admin.html)
+% are served from: the repo root. Located relative to the server.pl
+% file being run, so a persistent room's state directory (run.sh cds
+% into rooms/<name>/) still serves the game files.
+static_root(Root) :-
+    source_file(load_room_state, File),
+    file_directory_name(File, Root).
+
 register_at(Prefix) :-
     register_one(Prefix, ws, ws_with_token, [spawn([])]),
     register_one(Prefix, check, handle_check_room, []),
@@ -224,9 +232,10 @@ register_at(Prefix) :-
     register_one(Prefix, 'admin/kick-all', handle_admin_kick, []),
     register_one(Prefix, 'admin/kick', handle_admin_kick_one, []),
     register_one(Prefix, 'admin/restart', handle_admin_restart, []),
-    % File server: the handler closure is http_reply_from_files('.', [])
+    % File server: serves the game files from the repo root.
+    static_root(Root),
     Spec =.. [Prefix, '.'],
-    Closure =.. [http_reply_from_files, '.', []],
+    Closure =.. [http_reply_from_files, Root, []],
     http_handler(Spec, Closure, [prefix]).
 
 register_one(Prefix, Path, Handler, Options) :-
@@ -421,7 +430,9 @@ handle_kick_one(spec, Seat) :-
 % polls /admin/status for the live game state and scoreboard.
 serve_admin_page(Request) :-
     (   authorized_admin(Request)
-    ->  http_reply_file('admin.html', [], Request)
+    ->  static_root(Root),
+        directory_file_path(Root, 'admin.html', AdminFile),
+        http_reply_file(AdminFile, [unsafe(true)], Request)
     ;   % Ask for the key via basic-style prompt, or show a hint.
         reply_html_page(title('TienLen admin'),
                         [ h1('TienLen admin')
