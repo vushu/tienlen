@@ -666,9 +666,11 @@
                         '<span class=count>' + cards + '</span>' +
                         '<button class="danger small" onclick="kickOne(' + i + ')">Kick</button></div>';
                 }
-                // Open seats up to the 4-seat table.
+                // Open seats up to the 4-seat table, each with an "Add
+                // bot" button (placeholder for now - no bot logic yet).
                 for (let i = d.seated; i < 4; i++) {
-                    html += '<div class="player-row"><span class="name open-seat">open seat</span></div>';
+                    html += '<div class="player-row"><span class="name open-seat">open seat</span>' +
+                        '<button class="small" onclick="addBot(' + i + ')">Add bot</button></div>';
                 }
             }
             html += '<h2>Spectators</h2>';
@@ -873,6 +875,13 @@
                 fb.textContent = r.ok ? 'Kicked Spectator ' + (i + 1) : 'Kick failed (' + r.status + ')';
                 await refresh();
             } catch (e) { fb.textContent = 'Kick failed: ' + e; }
+        }
+
+        // Add a bot to an open seat. Placeholder: no bot logic on the
+        // server yet - just acknowledge the click.
+        function addBot(seat) {
+            const fb = document.getElementById('feedback');
+            fb.textContent = 'Bots are not implemented yet (seat ' + (seat + 1) + ')';
         }
 
         refresh();
