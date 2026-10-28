@@ -177,6 +177,13 @@
             flex-shrink: 0;
         }
 
+        /* Open (unfilled) seats: dimmed placeholder rows. */
+        .player-row .open-seat {
+            opacity: 0.4;
+            font-weight: 400;
+            font-style: italic;
+        }
+
         .player-row .count {
             color: rgba(236, 240, 241, 0.7);
             font-size: 0.85em;
@@ -639,7 +646,8 @@
         // Player and spectator lists with per-seat Kick buttons. Seats are
         // contiguous (0..seated-1); during a game the card counts come from
         // hand_counts, otherwise just the seat number is shown. Aliases
-        // are used when set.
+        // are used when set. Empty seats (up to the 4-seat table) are
+        // shown as open placeholders.
         function renderRoster(d) {
             const sec = document.getElementById('roster');
             const names = {};
@@ -657,6 +665,10 @@
                         (dead ? '<span class="away-badge">' + (d.persistent ? 'away' : 'disconnected') + '</span>' : '') +
                         '<span class=count>' + cards + '</span>' +
                         '<button class="danger small" onclick="kickOne(' + i + ')">Kick</button></div>';
+                }
+                // Open seats up to the 4-seat table.
+                for (let i = d.seated; i < 4; i++) {
+                    html += '<div class="player-row"><span class="name open-seat">open seat</span></div>';
                 }
             }
             html += '<h2>Spectators</h2>';
