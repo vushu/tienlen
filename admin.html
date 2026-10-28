@@ -541,6 +541,7 @@
         <section id="roster"></section>
         <section id="scoreboard"></section>
         <div class="actions">
+            <button id="fill-bots" onclick="fillSeatsWithBots()">Fill Seats with Bots</button>
             <button id="restart" onclick="restartGame()">Restart Game</button>
             <button id="kick" class="danger" onclick="kickAll()">Kick All Players</button>
         </div>
@@ -882,6 +883,15 @@
         function addBot(seat) {
             const fb = document.getElementById('feedback');
             fb.textContent = 'Bots are not implemented yet (seat ' + (seat + 1) + ')';
+        }
+
+        // Fill every open seat with a bot. Placeholder like addBot.
+        function fillSeatsWithBots() {
+            const fb = document.getElementById('feedback');
+            const open = lastStatus ? Math.max(0, 4 - lastStatus.seated) : 0;
+            fb.textContent = open === 0
+                ? 'No open seats to fill'
+                : 'Bots are not implemented yet (' + open + ' open seat' + (open > 1 ? 's' : '') + ')';
         }
 
         refresh();
