@@ -17,13 +17,14 @@
 %
 % Run with: swipl server.pl   (or ./run)
 
-:- module(server, [start/0, server_port/1, handle_ws/4, handle_message/2, handle_move/2, handle_kick_all/0, apply_move/3, settle/2, place_term/2, game_is_over/1, extract_player_index/2, client_action_allowed/2, start_new_game/0, update_game/1, broadcast/1, player_view/3, send_json/2, seat_client/4, remove_client/1, players/1, game/1, handle_player_left/2, broadcast_event/2, broadcast_event/3, bomb_beaten/3]).
+:- module(server, [start/0, server_port/1, handle_ws/4, handle_message/2, handle_move/2, handle_kick_all/0, apply_move/3, settle/2, place_term/2, game_is_over/1, extract_player_index/2, client_action_allowed/2, start_new_game/0, update_game/1, broadcast/1, player_view/3, send_json/2, seat_client/4, remove_client/1, players/1, game/1, handle_player_left/2, broadcast_event/2, broadcast_event/3, bomb_beaten/3, add_bot/1, remove_bot/1, bot/1]).
 :- use_module(library(http/http_server)).
 :- use_module(library(http/websocket)).
 :- use_module(library(http/http_files)).
 :- use_module(library(http/html_write)).
 :- use_module(library(http/http_json)).
 :- use_module(library(http/json)).
+:- use_module(library(random)).
 % Older SWI-Prolog (CI's Ubuntu package) keeps these under library(http/);
 % SWI 10 moved them to the top level and redirects the old paths.
 :- use_module(library(http/json_convert)).
@@ -41,11 +42,44 @@
 % which parses standard options (--port, --pidfile, --user, ...).
 :- initialization(serve, main).
 
-% ---------------------------------------------------------------------------
-% JSON shape of the game state (same declarations as before)
-% ---------------------------------------------------------------------------
 
-% rank is any (not (text;integer)): SWI 8.4's is_of_type/2 does not
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+% JSON conversion for the game state sent to clients. The card rank
+% is `any` (not `text`): older SWI versions on the webserver did not
 % support type disjunctions, which made every card conversion throw
 % type_error(json_term, card(...)) on the webserver. Atoms and integers
 % pass through `any` unchanged, so the JSON output is identical.
@@ -91,6 +125,8 @@
 % last_scoreboard(SB): the most recent game's scoreboard, kept after the
 % game is cleared so the admin view can still show it.
 :- dynamic players/1, game/1, session/2, kicked_session/1, ws_token/2, player_name/2, last_scoreboard/1.
+
+:- dynamic bot_seat/1.
 
 players([]).
 
@@ -187,7 +223,7 @@ start :-
     ->  format(user_error, 'Admin key: DISABLED~n', [])
     ;   format(user_error, 'Admin key: enabled~n', [])
     ),
-    thread_get_message(never). % keep the main thread alive
+    thread_get_message(never).  % keep the main thread alive
 
 % Daemon mode (like ems_dish_db): run as a background daemon managed by
 % systemd. Reads standard http_unix_daemon options (--port, --pidfile,
@@ -234,6 +270,8 @@ register_at(Prefix) :-
     register_one(Prefix, 'admin/kick-all', handle_admin_kick, []),
     register_one(Prefix, 'admin/kick', handle_admin_kick_one, []),
     register_one(Prefix, 'admin/restart', handle_admin_restart, []),
+    register_one(Prefix, 'admin/add-bot', handle_admin_add_bot, []),
+    register_one(Prefix, 'admin/fill-bots', handle_admin_fill_bots, []),
     % File server: serves the game files from the repo root with
     % Cache-Control: no-cache so browsers revalidate (cheap 304s)
     % instead of serving a stale client.js after a deploy - a cached
@@ -302,11 +340,11 @@ serve :-
 ws_with_token(Request) :-
     (   authorized_room(Request)
     ->  (   memberchk(search(Search), Request),
-            (   memberchk(token=Token, Search) -> true ; Token = none ),
-            (   memberchk(ident=Ident, Search) -> true ; Ident = none ),
+            (   memberchk(token=Token, Search) -> true ; Token = none   ),
+            (   memberchk(ident=Ident, Search) -> true ; Ident = none   ),
             (   memberchk(last_bomb=LastBomb, Search)
             ->  catch(atom_number(LastBomb, LastBombN), _, LastBombN = 0)
-            ;   LastBombN = 0 )
+            ;   LastBombN = 0   )
         ->  true
         ;   Token = none, Ident = none, LastBombN = 0
         ),
@@ -335,7 +373,7 @@ handle_admin_status(Request) :-
         % How many seats hold a dead socket (disconnected, in grace)?
         % The admin should see them as such, not as seated players.
         findall(Seat,
-                (   nth0(Seat, Players, WS), \+ socket_alive(WS) ),
+                (   nth0(Seat, Players, WS), \+ socket_alive(WS)   ),
                 DeadSeats),
         findall(Entry, roster_entry(Entry), Roster),
         (   game(GS)
@@ -357,7 +395,7 @@ handle_admin_status(Request) :-
             ),
             Game = _{running:false, scoreboard:SB}
         ),
-        (   persistent_mode -> Persistent = true ; Persistent = false ),
+        (   persistent_mode -> Persistent = true ; Persistent = false   ),
         reply_json_dict(_{seated:N, spectators:S, game:Game, names:Roster,
                           disconnected:DeadSeats, persistent:Persistent})
     ;   reply_json_dict(_{error:unauthorized}, [status(401)])
@@ -367,16 +405,21 @@ handle_admin_status(Request) :-
 hand_json(Hand, HandJ) :-
     maplist(card_json, Hand, HandJ).
 
-% Admin: kick everyone. Accepts any method; returns a short confirmation.
-% The kick runs in a separate thread: closing the WebSocket connections
-% disrupts keep-alive HTTP connections, so the reply must complete first.
-handle_admin_kick(Request) :-
-    (   authorized_admin(Request)
-    ->  format(user_error, 'ADMIN KICK requested~n', []),
-        reply_json_dict(_{ok:true, kicked:all}),
-        thread_create(admin_kick_thread, _, [detached(true)])
-    ;   reply_json_dict(_{error:unauthorized}, [status(401)])
-    ).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 admin_kick_thread :-
     catch(with_mutex(tienlen_game, handle_kick_all),
@@ -437,16 +480,35 @@ with_null_output(Goal) :-
 
 admin_restart_thread :-
     catch(with_null_output(with_mutex(tienlen_game,
-                         (   players(Players), length(Players, N), N >= 2
-                         ->  start_new_game
-                         ;   true
-                         ))),
+                                      (   players(Players), length(Players, N), N >= 2
+                                      ->  start_new_game
+                                      ;   true
+                                      ))),
           E, format(user_error, 'Admin restart error: ~q~n', [E])),
     !.
 admin_restart_thread :-
     format(user_error, 'Admin restart thread finished~n', []).
 
 handle_kick_one(seat, Seat) :-
+    (   bot(Seat)
+    ->  % A bot seat: no socket to close, just remove it.
+        format(user_error, 'ADMIN KICK bot ~w~n', [Seat]),
+        remove_bot(Seat)
+    ;   handle_kick_one_human(seat, Seat)
+    ).
+handle_kick_one(spec, Seat) :-
+    spectators(Specs),
+    (   nth0(Seat, Specs, WS)
+    ->  format(user_error, 'ADMIN KICK spectator ~w~n', [Seat]),
+        (   kicked_token(WS, Token), Token \== none
+        ->  retractall(kicked_session(Token)), assertz(kicked_session(Token))
+        ;   true
+        ),
+        catch(ws_close(WS, 1000, 'kicked'), _, true)
+    ;   format(user_error, 'ADMIN KICK: no such spectator ~w~n', [Seat])
+    ).
+
+handle_kick_one_human(seat, Seat) :-
     players(Players),
     (   between(0, 3, Seat),
         nth0(Seat, Players, WS)
@@ -475,17 +537,6 @@ handle_kick_one(seat, Seat) :-
         )
     ;   format(user_error, 'ADMIN KICK: no such seat ~w~n', [Seat])
     ).
-handle_kick_one(spec, Seat) :-
-    spectators(Specs),
-    (   nth0(Seat, Specs, WS)
-    ->  format(user_error, 'ADMIN KICK spectator ~w~n', [Seat]),
-        (   kicked_token(WS, Token), Token \== none
-        ->  retractall(kicked_session(Token)), assertz(kicked_session(Token))
-        ;   true
-        ),
-        catch(ws_close(WS, 1000, 'kicked'), _, true)
-    ;   format(user_error, 'ADMIN KICK: no such spectator ~w~n', [Seat])
-    ).
 
 % Admin page: a static page (admin.html) served from the repo root; it
 % polls /admin/status for the live game state and scoreboard. Sends
@@ -500,8 +551,7 @@ serve_admin_page(Request) :-
                         Request)
     ;   % Ask for the key via basic-style prompt, or show a hint.
         reply_html_page(title('TienLen admin'),
-                        [ h1('TienLen admin')
-                        , p('Unauthorized. Append ?key=YOUR_ADMIN_KEY to the URL.')
+                        [ h1('TienLen admin'), p('Unauthorized. Append ?key=YOUR_ADMIN_KEY to the URL.')
                         ])
     ).
 
@@ -617,7 +667,7 @@ spectator_join(WS) :-
     ),
     spectators(Specs),
     (   memberchk(WS, Specs) -> true
-    ;   retract(spectators(Specs)), assertz(spectators([WS | Specs]))
+    ;   retract(spectators(Specs)), assertz(spectators([WS  |Specs]))
     ),
     send_names(WS).
 
@@ -663,15 +713,15 @@ save_room_state :-
     catch((players(Players),
            findall(Owner,
                    (   nth0(Seat, Players, _),
-                       (   seat_owner(Seat, Owner) -> true ; Owner = none )
+                       (   seat_owner(Seat, Owner) -> true ; Owner = none   )
                    ),
                    Owners),
            findall(Name,
                    (   nth0(Seat, Players, WS),
-                       (   player_name(WS, Name) -> true ; Name = null )
+                       (   player_name(WS, Name) -> true ; Name = null   )
                    ),
                    Names),
-           (   game(GS) -> true ; GS = none ),
+           (   game(GS) -> true ; GS = none   ),
            round_log(Log),
            state_file(File),
            open(File, write, Stream),
@@ -739,7 +789,7 @@ left_seats([]).
 % silent past the window: a phone in standby freezes the page while
 % the OS keeps the TCP connection half-open, so no close frame ever
 % arrives and the game would otherwise wait forever for a zombie seat.
-:- dynamic last_seen/2.   % last_seen(WS, Time)
+:- dynamic last_seen/2.    % last_seen(WS, Time)
 
 % Drop clients whose heartbeat has been silent past the window (the
 % client beats every 20s; 75s means three missed beats). Removal runs
@@ -873,50 +923,50 @@ game_is_over_running :-
 % reconnected (their seat still holds a dead socket), treat them as gone.
 % A seat that keeps flapping (zombie tab auto-reconnecting without a human)
 % is released after a few cycles so the game does not stall forever.
-:- dynamic grace_flaps/2.   % grace_flaps(Seat, Count)
+:- dynamic grace_flaps/2.    % grace_flaps(Seat, Count)
 
 grace_timeout(Seat) :-
     (   persistent_mode
     ->  true    % persistent rooms: the seat is owned, never released
     ;   sleep(10),                       % reconnect window (page refresh)
         with_mutex(tienlen_game,
-               (   players(List),
-                   (   nth0(Seat, List, Sock), \+ socket_alive(Sock),
-                       game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS)
-                   ->  format(user_error, 'Player ~w left mid-game (grace expired)~n', [Seat]),
-                       handle_player_left(Seat, GS),
-                       promote_spectator(Seat),
-                       broadcast_event(grace_ended, Seat),
-                       retractall(grace_flaps(Seat, _))
-                   ;   (   nth0(Seat, List, Sock2), socket_alive(Sock2)
-                       ->  % reconnected: count the flap; too many = zombie
-                           (   retract(grace_flaps(Seat, C))
-                           ->  C1 is C + 1
-                           ;   C1 = 1
-                           ),
-                           assertz(grace_flaps(Seat, C1)),
-                           (   C1 >= 3
-                           ->  format(user_error, 'Player ~w seat released (repeated disconnects)~n', [Seat]),
-                               (   game(GS2), \+ game_is_over(GS2), seat_in_game(Seat, GS2)
-                               ->  handle_player_left(Seat, GS2),
-                                   promote_spectator(Seat),
-                                   broadcast_event(grace_ended, Seat)
-                               ;   true
+                   (   players(List),
+                       (   nth0(Seat, List, Sock), \+ socket_alive(Sock),
+                           game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS)
+                       ->  format(user_error, 'Player ~w left mid-game (grace expired)~n', [Seat]),
+                           handle_player_left(Seat, GS),
+                           promote_spectator(Seat),
+                           broadcast_event(grace_ended, Seat),
+                           retractall(grace_flaps(Seat, _))
+                       ;   (   nth0(Seat, List, Sock2), socket_alive(Sock2)
+                           ->  % reconnected: count the flap; too many = zombie
+                               (   retract(grace_flaps(Seat, C))
+                               ->  C1 is C + 1
+                               ;   C1 = 1
                                ),
-                               retractall(grace_flaps(Seat, _))
-                           ;   true
+                               assertz(grace_flaps(Seat, C1)),
+                               (   C1 >= 3
+                               ->  format(user_error, 'Player ~w seat released (repeated disconnects)~n', [Seat]),
+                                   (   game(GS2), \+ game_is_over(GS2), seat_in_game(Seat, GS2)
+                                   ->  handle_player_left(Seat, GS2),
+                                       promote_spectator(Seat),
+                                       broadcast_event(grace_ended, Seat)
+                                   ;   true
+                                   ),
+                                   retractall(grace_flaps(Seat, _))
+                               ;   true
+                               )
+                           ;   % Dead socket with no live game to rejoin (the
+                               % game ended meanwhile, or the seat is outside
+                               % the game): release the seat now instead of
+                               % waiting for the network to notice the dead
+                               % connection. Sweep every such zombie at once -
+                               % removing one-by-one would shift seat indices
+                               % under the other pending grace timers.
+                               reap_dead_players
                            )
-                       ;   % Dead socket with no live game to rejoin (the
-                           % game ended meanwhile, or the seat is outside
-                           % the game): release the seat now instead of
-                           % waiting for the network to notice the dead
-                           % connection. Sweep every such zombie at once -
-                           % removing one-by-one would shift seat indices
-                           % under the other pending grace timers.
-                           reap_dead_players
                        )
                    )
-               )
         )
     ).
 
@@ -1028,7 +1078,7 @@ accept_seat(WS, Seat) :-
 % Spectators who declined a specific seat offer: they stay spectators
 % (they keep watching and can still join later), but are not offered
 % the same seat again.
-:- dynamic seat_declined/2.   % seat_declined(Seat, WS)
+:- dynamic seat_declined/2.    % seat_declined(Seat, WS)
 
 % The spectator declined: keep them as a spectator, but don't offer them
 % this seat again; offer it to the others.
@@ -1052,7 +1102,7 @@ handle_player_left(Seat, GS) :-
     left_seats(Left),
     (   memberchk(Seat, Left)
     ->  true                            % already handled
-    ;   retractall(left_seats(_)), assertz(left_seats([Seat | Left])),
+    ;   retractall(left_seats(_)), assertz(left_seats([Seat  |Left])),
         GS = game_state(Hands, PlayerStates, CIP, DC, Attacker, SB, next_move(Whose, Action)),
         replace_at(Seat, Hands, [], NewHands),
         GS1 = game_state(NewHands, PlayerStates, CIP, DC, Attacker, SB, next_move(Whose, Action)),
@@ -1103,13 +1153,13 @@ force_game_over_if_needed(GS0, GS) :-
 % Small list helpers (0-based)
 % ---------------------------------------------------------------------------
 
-replace_at(0, [_ | T], New, [New | T]) :- !.
-replace_at(N, [H | T], New, [H | R]) :-
+replace_at(0, [_  |T], New, [New  |T]) :- !.
+replace_at(N, [H  |T], New, [H  |R]) :-
     N1 is N - 1,
     replace_at(N1, T, New, R).
 
-remove_at(0, [_ | T], T) :- !.
-remove_at(N, [H | T], [H | R]) :-
+remove_at(0, [_  |T], T) :- !.
+remove_at(N, [H  |T], [H  |R]) :-
     N1 is N - 1,
     remove_at(N1, T, R).
 
@@ -1134,18 +1184,18 @@ normalize_name(Codes, Normalized) :-
 
 % Collapse runs of spaces to a single space.
 collapse_spaces([], []).
-collapse_spaces([32 | T], [32 | R]) :-
+collapse_spaces([32  |T], [32  |R]) :-
     !,
     strip_leading_spaces(T, T1),
     collapse_spaces(T1, R).
-collapse_spaces([C | T], [C | R]) :-
+collapse_spaces([C  |T], [C  |R]) :-
     collapse_spaces(T, R).
 
-strip_leading_spaces([32 | T], R) :- !, strip_leading_spaces(T, R).
+strip_leading_spaces([32  |T], R) :- !, strip_leading_spaces(T, R).
 strip_leading_spaces(T, T).
 
 strip_trailing([32], []) :- !.
-strip_trailing([C | T], [C | R]) :- !, strip_trailing(T, R).
+strip_trailing([C  |T], [C  |R]) :- !, strip_trailing(T, R).
 strip_trailing([], []).
 
 % The next placement in sequence given the states so far.
@@ -1387,7 +1437,7 @@ handle_kick_all :-
     findall(Token, (member(WS, Specs), kicked_token(WS, Token)), SpecTokens),
     append(PlayerTokens, SpecTokens, AllTokens),
     forall(member(T, AllTokens),
-           (   retractall(kicked_session(T)), assertz(kicked_session(T)) )),
+           (   retractall(kicked_session(T)), assertz(kicked_session(T))   )),
     retractall(players(_)), assertz(players([])),
     retractall(spectators(_)), assertz(spectators([])),
     retractall(game(_)),
@@ -1450,6 +1500,197 @@ handle_start_over(WS) :-
 game_is_over(game_state(_, _, _, _, _, _, next_move(_, game_over))).
 
 % ---------------------------------------------------------------------------
+% Bots
+%
+% A bot is a player-list entry like any other (so dealing, turns, the
+% roster and the log all work unchanged) - it just has no socket. Its
+% "connection" is the atom bot(Seat). When a game state lands on a
+% bot's turn, update_game schedules the bot to move after a short
+% human-like delay; the bot then picks a RANDOM legal play and submits
+% it through the same handle_move pipeline a human uses, so logging,
+% bombs and broadcasts work for free.
+% ---------------------------------------------------------------------------
+
+% bot(Seat): this seat is a bot.
+:- dynamic bot/1.
+
+% The bot's player-list entry (its "socket").
+bot_ws(Seat, bot(Seat)).
+
+% Admin: add a bot in an open seat. POST /admin/add-bot?seat=N.
+handle_admin_add_bot(Request) :-
+    (   authorized_admin(Request)
+    ->  (   memberchk(search(Search), Request),
+            memberchk(seat=SeatAtom, Search),
+            catch(atom_number(SeatAtom, Seat), _, fail)
+    ->  reply_json_dict(_{ok:true}),
+        thread_create(admin_add_bot_thread(Seat), _, [detached(true)])
+    ;   reply_json_dict(_{error:missing_seat}, [status(400)])
+    )
+    ;   reply_json_dict(_{error:unauthorized}, [status(401)])
+    ).
+
+% Admin: fill every open seat with a bot. POST /admin/fill-bots.
+handle_admin_fill_bots(Request) :-
+    (   authorized_admin(Request)
+    ->  reply_json_dict(_{ok:true}),
+        thread_create(admin_fill_bots_thread, _, [detached(true)])
+    ;   reply_json_dict(_{error:unauthorized}, [status(401)])
+    ).
+
+admin_add_bot_thread(Seat) :-
+    catch(with_mutex(tienlen_game, add_bot(Seat)),
+          E, format(user_error, 'Add bot error: ~q~n', [E])),
+    !.
+admin_add_bot_thread(_).
+
+admin_fill_bots_thread :-
+    catch(with_mutex(tienlen_game,
+                     (   players(Players),
+                         length(Players, N),
+                         forall(between(N, 3, Seat), add_bot(Seat))
+                     )),
+          E, format(user_error, 'Fill bots error: ~q~n', [E])),
+    !.
+admin_fill_bots_thread.
+
+% Seat a bot at Seat (0-based, must be the next open seat: bots are
+% appended like joining players). Registers the name, marks the seat,
+% and deals it in if a game is running (like a mid-game joiner).
+add_bot(Seat) :-
+    players(Players),
+    length(Players, N),
+    (   Seat == N                       % appending at the end?
+    ->  bot_ws(Seat, WS),
+        append(Players, [WS], NewPlayers),
+        retractall(players(_)), assertz(players(NewPlayers)),
+        assertz(bot(Seat)),
+        retractall(player_name(WS, _)),
+        assertz(player_name(WS, 'Bot')),
+        save_room_state,
+        format(user_error, 'Bot seated at ~w~n', [Seat]),
+        broadcast_lobby
+    ;   format(user_error, 'Add bot: seat ~w not open (next is ~w)~n', [Seat, N])
+    ).
+
+% Remove a bot (admin kick on a bot seat): drop it from the players
+% list, take it out of a running game, forget the marker.
+remove_bot(Seat) :-
+    bot(Seat),
+    !,
+    bot_ws(Seat, WS),
+    (   game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS)
+    ->  handle_player_left(Seat, GS)
+    ;   true
+    ),
+    players(Players),
+    (   select(WS, Players, Rest)
+    ->  retractall(players(_)), assertz(players(Rest))
+    ;   true
+    ),
+    retractall(bot(Seat)),
+    retractall(player_name(WS, _)),
+    save_room_state,
+    broadcast_lobby.
+
+% After every game state change: if it is now a bot's turn, schedule
+% the bot's move (a short delay so the game reads naturally for the
+% humans watching).
+maybe_schedule_bot(GS) :-
+    GS = game_state(_, _, _, _, _, _, next_move(Seat, Action)),
+    bot(Seat),
+    Action \== game_over,
+    !,
+    thread_create(bot_turn(Seat), _, [detached(true)]).
+maybe_schedule_bot(_).
+
+% One bot turn: wait a beat, then pick a random legal move and submit
+% it through the same path a human's move takes. The engine's writeln
+% debug output needs a current_output: bot threads (like admin
+% threads) have none, so run under a null stream.
+bot_turn(Seat) :-
+    sleep(1.5),                          % human-like thinking time
+    with_mutex(tienlen_game,
+               (   game(GS),
+                   GS = game_state(_, _, _, _, _, _, next_move(Seat, Action)),
+                   Action \== game_over,
+                   bot(Seat)
+               ->  bot_choose_move(GS, Seat, Action, Dict),
+                   format(user_error, 'Bot ~w plays: ~q~n', [Seat, Dict]),
+                   catch(with_null_output(handle_move_bot(Seat, Dict)), E,
+                         format(user_error, 'Bot move error: ~q~n', [E]))
+               ;   true                    % turn moved on: do nothing
+               )).
+
+% handle_move for a bot: the same pipeline as a human move, but the
+% sender is the bot's seat rather than a socket.
+handle_move_bot(Seat, Dict) :-
+    bot_ws(Seat, WS),
+    handle_move(WS, Dict).
+
+% Pick a random legal move for the bot given the current state.
+%   forced pass  -> pass
+%   free move    -> a random legal combination that beats the table
+%                   (or any combination on an empty table); if none
+%                   beats, pass.
+bot_choose_move(_, _, pass, _{action:pass}) :-
+    !.
+bot_choose_move(GS, Seat, make_move, Dict) :-
+    GS = game_state(Hands, _, CIP, _, _, _, _),
+    nth0(Seat, Hands, Hand),
+    (   CIP == none
+    ->  % Empty table: any combination is legal.
+        findall(Comb, bot_combination(Hand, Comb), Combs)
+    ;   % Must beat what is on the table.
+        findall(Comb,
+                (   bot_combination(Hand, Comb),
+                    beats(Comb, CIP)
+                ),
+                Combs)
+    ),
+    (   Combs == []
+    ->  Dict = _{action:pass}
+    ;   length(Combs, Count),
+        random_between(1, Count, Pick),
+        nth1(Pick, Combs, Comb),
+        combination_dict(Comb, Dict)
+    ).
+
+% Every combination the engine's hand finder knows about, as a place
+% term (single/pair/three/four/sequence/double_sequence). The finder
+% returns a list of alternative decompositions (one per recursion
+% path); append them all and take the individual combinations.
+bot_combination(Hand, Comb) :-
+    get_all_possible_hands(Hand, Found),
+    append(Found, Flat),
+    member(Comb, Flat),
+    playable_combination(Comb).
+
+playable_combination(single(_)).
+playable_combination(pair(_)).
+playable_combination(three_of_kind(_)).
+playable_combination(four_of_kind(_)).
+playable_combination(sequence(_)).
+playable_combination(double_sequence(_)).
+
+% A place term as the move dict handle_move expects (the same JSON
+% shape the client sends).
+combination_dict(Comb, _{action:_{place:Place}}) :-
+    combination_place(Comb, Place).
+
+combination_place(single(card(R, S)), _{type:single, card:_{rank:R, suit:S}}).
+combination_place(pair(Cards), _{type:pair, cards:CardJs}) :-
+    maplist([card(R, S), C]>>(C = _{rank:R, suit:S}), Cards, CardJs).
+combination_place(three_of_kind(Cards), _{type:three_of_kind, cards:CardJs}) :-
+    maplist([card(R, S), C]>>(C = _{rank:R, suit:S}), Cards, CardJs).
+combination_place(four_of_kind(Cards), _{type:four_of_kind, cards:CardJs}) :-
+    maplist([card(R, S), C]>>(C = _{rank:R, suit:S}), Cards, CardJs).
+combination_place(sequence(Cards), _{type:sequence, cards:CardJs}) :-
+    maplist([card(R, S), C]>>(C = _{rank:R, suit:S}), Cards, CardJs).
+combination_place(double_sequence(Cards), _{type:double_sequence, cards:CardJs}) :-
+    maplist([card(R, S), C]>>(C = _{rank:R, suit:S}), Cards, CardJs).
+
+% ---------------------------------------------------------------------------
 % Moves
 % ---------------------------------------------------------------------------
 
@@ -1497,7 +1738,7 @@ bombing_combination(single(card(2, _)), double_sequence(_), single).
 bombing_combination(pair([card(2, _), card(2, _)]), double_sequence(Cards), pair) :-
     length(Cards, 8).
 bombing_combination(three_of_kind([card(2, _), card(2, _), card(2, _)]),
-                     double_sequence(Cards), triple) :-
+                    double_sequence(Cards), triple) :-
     length(Cards, 10).
 
 % A transient event (not game state): clients animate it and discard it.
@@ -1523,14 +1764,14 @@ broadcast_event(Event, Seat) :-
 % Bomb history: every bomb gets a monotonically increasing id. Clients
 % report the highest id they have seen; on (re)connect the server sends
 % everything newer. Cleared when a new game starts.
-:- dynamic bomb_event/3.   % bomb_event(Id, Seat, Kind)
+:- dynamic bomb_event/3.    % bomb_event(Id, Seat, Kind)
 :- dynamic bomb_seq/1.
 bomb_seq(0).
 
 % Round move log: every move this round (seat, action, cards, bomb flag).
 % Cleared when a new game starts; sent to clients as part of the game
 % view so reconnectors see the full round history.
-:- dynamic round_log/1.   % round_log(Entries) - newest last
+:- dynamic round_log/1.    % round_log(Entries) - newest last
 round_log([]).
 
 % Append a move to the round log. Bomb is true/false so the client can
@@ -1755,6 +1996,9 @@ update_game(GS) :-
     retractall(game(_)),
     asserta(game(GS)),
     save_room_state,
+    % If it is now a bot's turn, schedule its move (after the broadcast
+    % so the humans see the state first).
+    maybe_schedule_bot(GS),
     % Remember the winner so the next round is led by them (free choice)
     % instead of the forced 3♠ opening.
     (   GS = game_state(_, _, _, _, _, _, next_move(Winner, game_over))
@@ -1799,7 +2043,7 @@ player_view(GS, Seat, json(Pairs)) :-
     length(Players, Seated),
     round_log(Log),
     append(Pairs0, [your_seat=Seat, seated=Seated, persistent=persistent_mode,
-                     move_log=Log], Pairs).
+                    move_log=Log], Pairs).
 
 hide_hands(game_state(Hands, PlayerStates, CIP, DC, A, SB, NM), Seat,
            game_state(ViewHands, PlayerStates, CIP, DC, A, SB, NM)) :-
@@ -1817,6 +2061,8 @@ hidden_hand(_, _, Hand, Hidden) :-
 % Sockets known to be dead: sending failed once; skip silently after.
 :- dynamic dead_socket/1.
 
+send_json(bot(_), _) :-
+    !.                                         % bots have no socket: skip
 send_json(WS, JSON) :-
     (   dead_socket(WS)
     ->  true                                    % already dead: skip quietly
@@ -1831,3 +2077,18 @@ send_json(WS, JSON) :-
 % ---------------------------------------------------------------------------
 
 extract_player_index(game_state(_, _, _, _, _, _, next_move(PlayerIndex, _)), PlayerIndex).
+
+% bot_character/2 -- has a name an a personality.
+bot_character(1, "JujuBot", random).
+bot_character(2, "MewuuBot", smart).
+bot_character(3, "BaoBot", mid).
+bot_character(4, "LaidBackBot", mid).
+bot_character(5, "LolexBot", aggressive).
+bot_character(6, "EveemeepBot", smart).
+bot_character(7, "TinkauBot", random).
+bot_character(8, "FishBot", random).
+bot_character(9, "GloqqxBot", aggresive).
+
+pick_random_bot(Bot) :-
+    findall(bot_character(N, P), bot_character(N, P), Bots),
+    random_member(Bot, Bots).

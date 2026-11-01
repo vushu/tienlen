@@ -1,4 +1,4 @@
-:- module(tienlen, [card_score/2, start_game/3, start_game/4, start_game/5, initialize_game_full_players/1, initialize_game_three_players/1, initialize_game_two_players/1, interpret_tienlen/2, simulate_pass_move/2, simulate_placing_cards/3, get_next_move/2, get_cards_in_play/2, get_player_states/2, get_attacker_index/2, get_discarded_cards/2, next_player/4]).
+:- module(tienlen, [card_score/2, start_game/3, start_game/4, start_game/5, initialize_game_full_players/1, initialize_game_three_players/1, initialize_game_two_players/1, interpret_tienlen/2, simulate_pass_move/2, simulate_placing_cards/3, get_next_move/2, get_cards_in_play/2, get_player_states/2, get_attacker_index/2, get_discarded_cards/2, next_player/4, get_all_possible_hands/2, beats/2, sort_by_score/2]).
 :- use_module(cards).
 
 rank_value(3, 3). rank_value(4, 4). rank_value(5, 5).

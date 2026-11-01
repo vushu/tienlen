@@ -878,20 +878,26 @@
             } catch (e) { fb.textContent = 'Kick failed: ' + e; }
         }
 
-        // Add a bot to an open seat. Placeholder: no bot logic on the
-        // server yet - just acknowledge the click.
-        function addBot(seat) {
+        // Add a bot to an open seat.
+        async function addBot(seat) {
             const fb = document.getElementById('feedback');
-            fb.textContent = 'Bots are not implemented yet (seat ' + (seat + 1) + ')';
+            fb.textContent = 'Adding bot...';
+            try {
+                const r = await fetch(base + '/admin/add-bot?seat=' + seat + (key ? '&key=' + encodeURIComponent(key) : ''), { method: 'POST' });
+                fb.textContent = r.ok ? 'Bot added' : 'Add bot failed (' + r.status + ')';
+                await refresh();
+            } catch (e) { fb.textContent = 'Add bot failed: ' + e; }
         }
 
-        // Fill every open seat with a bot. Placeholder like addBot.
-        function fillSeatsWithBots() {
+        // Fill every open seat with a bot.
+        async function fillSeatsWithBots() {
             const fb = document.getElementById('feedback');
-            const open = lastStatus ? Math.max(0, 4 - lastStatus.seated) : 0;
-            fb.textContent = open === 0
-                ? 'No open seats to fill'
-                : 'Bots are not implemented yet (' + open + ' open seat' + (open > 1 ? 's' : '') + ')';
+            fb.textContent = 'Filling seats with bots...';
+            try {
+                const r = await fetch(base + '/admin/fill-bots' + (key ? '?key=' + encodeURIComponent(key) : ''), { method: 'POST' });
+                fb.textContent = r.ok ? 'Seats filled with bots' : 'Fill failed (' + r.status + ')';
+                await refresh();
+            } catch (e) { fb.textContent = 'Fill failed: ' + e; }
         }
 
         refresh();
