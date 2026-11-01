@@ -418,7 +418,7 @@ handle_admin_kick(Request) :-
     ).
 
 admin_kick_thread :-
-    catch(with_mutex(tienlen_game, handle_kick_all),
+    catch(with_null_output(with_mutex(tienlen_game, handle_kick_all)),
           E, format(user_error, 'Admin kick error: ~q~n', [E])),
     !.
 admin_kick_thread :-
@@ -448,7 +448,7 @@ handle_admin_kick_one(Request) :-
 % normal disconnect machinery (remove_client) frees the seat, runs the
 % grace period if a game is running, and updates the lobby.
 admin_kick_one_thread(Kind, Seat) :-
-    catch(with_mutex(tienlen_game, handle_kick_one(Kind, Seat)),
+    catch(with_null_output(with_mutex(tienlen_game, handle_kick_one(Kind, Seat))),
           E, format(user_error, 'Admin kick-one error: ~q~n', [E])),
     !.
 admin_kick_one_thread(_, _) :-
@@ -527,6 +527,7 @@ handle_kick_one_human(seat, Seat) :-
             ),
             select(WS, Players, Rest),
             retractall(players(_)), assertz(players(Rest)),
+            renumber_bots(Rest),
             broadcast_lobby,
             save_room_state
         ;   catch(ws_close(WS, 1000, 'kicked'), _, true)
@@ -937,6 +938,7 @@ remove_client(WS) :-
             broadcast_event(grace_started, Seat),
             thread_create(grace_timeout(Seat), _, [detached(true)])
         ;   retract(players(List)), assertz(players(Rest)),
+            renumber_bots(Rest),
             format(user_error, 'Client disconnected, ~w player(s) left~n', [Rest]),
             (   game_is_over_running, length(Rest, N), N < 2
             ->  % Game over and too few players remain to start a new one:
@@ -986,7 +988,7 @@ grace_timeout(Seat) :-
     (   persistent_mode
     ->  true    % persistent rooms: the seat is owned, never released
     ;   sleep(10),                       % reconnect window (page refresh)
-        with_mutex(tienlen_game,
+        catch(with_null_output(with_mutex(tienlen_game,
                    (   players(List),
                        (   nth0(Seat, List, Sock), \+ socket_alive(Sock),
                            game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS)
@@ -1023,8 +1025,8 @@ grace_timeout(Seat) :-
                                reap_dead_players
                            )
                        )
-                   )
-        )
+                   ))),
+          E, format(user_error, 'Grace timeout error: ~q~n', [E]))
     ).
 
 % Remove every seated socket that is dead and has no live game to rejoin
@@ -1649,17 +1651,17 @@ handle_admin_fill_bots(Request) :-
     ).
 
 admin_add_bot_thread(Seat) :-
-    catch(with_mutex(tienlen_game, add_bot(Seat)),
+    catch(with_null_output(with_mutex(tienlen_game, add_bot(Seat))),
           E, format(user_error, 'Add bot error: ~q~n', [E])),
     !.
 admin_add_bot_thread(_).
 
 admin_fill_bots_thread :-
-    catch(with_mutex(tienlen_game,
+    catch(with_null_output(with_mutex(tienlen_game,
                      (   players(Players),
                          length(Players, N),
                          forall(between(N, 3, Seat), add_bot(Seat))
-                     )),
+                     ))),
           E, format(user_error, 'Fill bots error: ~q~n', [E])),
     !.
 admin_fill_bots_thread.
@@ -1691,6 +1693,12 @@ remove_bot(Seat) :-
     bot(Seat),
     !,
     bot_ws(Seat, WS),
+    % Retract the kicked bot's facts FIRST: the lobby compaction below
+    % renumbers later bots into this seat number, and a late retract
+    % would then kill the renamed bot instead.
+    retractall(bot(Seat)),
+    retractall(bot_personality(Seat, _)),
+    retractall(player_name(WS, _)),
     (   game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS)
     ->  % Mid-game: take the bot out of the game but KEEP its entry in
         % the players list as a dead placeholder (exactly like a
@@ -1703,13 +1711,11 @@ remove_bot(Seat) :-
     ;   % No game running: compacting the lobby is safe.
         players(Players),
         (   select(WS, Players, Rest)
-        ->  retractall(players(_)), assertz(players(Rest))
+        ->  retractall(players(_)), assertz(players(Rest)),
+            renumber_bots(Rest)
         ;   true
         )
     ),
-    retractall(bot(Seat)),
-    retractall(bot_personality(Seat, _)),
-    retractall(player_name(WS, _)),
     save_room_state,
     broadcast_lobby.
 
@@ -2150,13 +2156,56 @@ prune_left_seats :-
         ->  true    % nothing to prune (entries were stale)
         ;   exclude_at(Dead, Players, Remaining),
             retractall(players(_)), assertz(players(Remaining)),
+            renumber_bots(Remaining),
             format(user_error, 'Pruned ~w departed seat(s)~n', [Dead])
         ),
         retractall(left_seats(_)), assertz(left_seats([]))
     ).
 
-% Remove the given 0-based indices from a list (sorted descending so each
-% removal keeps the remaining indices valid).
+% After any compaction of the players list, every live bot's entry
+% (the atom bot(Seat)) must match its NEW index: bot(3) seated at
+% index 2 after a prune would never be scheduled (maybe_schedule_bot
+% asks for bot(2)) and the game stalls on its turn. Dead bot
+% placeholders (kicked bots kept for mid-game seat stability) are
+% dropped first: the list is compacting, so there is no game state
+% left to keep indices stable for, and a stale placeholder atom would
+% collide with a live bot renumbered into the same seat number.
+renumber_bots(Players0) :-
+    exclude(dead_bot_entry, Players0, Players1),
+    retractall(players(_)), assertz(players(Players1)),
+    renumber_bots_(Players1).
+
+dead_bot_entry(bot(S)) :-
+    \+ bot(S).
+
+% Move one mismatched live bot to its new seat, then re-scan: the
+% rewrite changed the list, so later bots are checked against it.
+% Bots are renumbered in ascending index order and compaction only
+% shifts seats down, so each target seat number is already free.
+renumber_bots_(Players) :-
+    (   nth0(NewSeat, Players, bot(OldSeat)),
+        OldSeat \== NewSeat,
+        bot(OldSeat)
+    ->  bot_ws(NewSeat, NewWS),
+        replace_at(NewSeat, Players, NewWS, Mid),
+        retractall(players(_)), assertz(players(Mid)),
+        retractall(bot(OldSeat)), assertz(bot(NewSeat)),
+        (   retract(bot_personality(OldSeat, Personality))
+        ->  assertz(bot_personality(NewSeat, Personality))
+        ;   true
+        ),
+        (   player_name(bot(OldSeat), Name)
+        ->  retractall(player_name(bot(OldSeat), _)),
+            assertz(player_name(NewWS, Name))
+        ;   true
+        ),
+        format(user_error, 'Bot seat ~w renumbered to ~w~n', [OldSeat, NewSeat]),
+        players(Now), renumber_bots_(Now)
+    ;   true    % every bot entry matches its index
+    ).
+
+% Remove the given 0-based indices from a list (sorted descending so the
+% remaining indices stay valid).
 exclude_at([], List, List) :- !.
 exclude_at(Indices, List, Rest) :-
     sort(Indices, SortedAsc),

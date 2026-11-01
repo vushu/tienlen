@@ -643,6 +643,41 @@ test(player_view_hides_other_hands) :-
     memberchk(hands=[[null],[json([rank=4,suit=hearts]),json([rank=5,suit=hearts])]], Pairs1),
     memberchk(your_seat=1, Pairs1).
 
+% A kicked bot's dead placeholder is pruned at the next game start; the
+% later bots' entries must move with their new indices or the game
+% stalls on their turn (maybe_schedule_bot asks for the new seat number).
+test(prune_left_seats_renumbers_bots) :-
+    server:retractall(players(_)),
+    server:assertz(players([human_ws, bot(1), bot(2), bot(3)])),
+    server:retractall(bot(_)), server:assertz(bot(1)), server:assertz(bot(3)),
+    server:retractall(bot_personality(_, _)),
+    server:assertz(bot_personality(1, random)), server:assertz(bot_personality(3, mid)),
+    server:retractall(player_name(bot(3), _)), server:assertz(player_name(bot(3), 'JujuBot')),
+    server:retractall(left_seats(_)), server:assertz(left_seats([2])),
+    server:prune_left_seats,
+    players(P), P == [human_ws, bot(1), bot(2)],
+    bot(1), bot(2), \+ bot(3),
+    bot_personality(2, mid), bot_personality(1, random),
+    server:player_name(bot(2), 'JujuBot'),
+    cleanup_fake_game.
+
+% A lobby compaction (bot kicked with no game running) must also move
+% the later bots' facts to their new seats.
+test(remove_bot_in_lobby_renumbers_later_bots) :-
+    server:retractall(game(_)),
+    server:retractall(players(_)),
+    server:assertz(players([human_ws, bot(1), bot(2)])),
+    server:retractall(bot(_)), server:assertz(bot(1)), server:assertz(bot(2)),
+    server:retractall(bot_personality(_, _)),
+    server:assertz(bot_personality(1, random)), server:assertz(bot_personality(2, smart)),
+    server:retractall(player_name(bot(2), _)), server:assertz(player_name(bot(2), 'MewuuBot')),
+    server:remove_bot(1),
+    players(P), P == [human_ws, bot(1)],
+    bot(1), \+ bot(2),
+    bot_personality(1, smart),
+    server:player_name(bot(1), 'MewuuBot'),
+    cleanup_fake_game.
+
 % ---------------------------------------------------------------------------
 % Fixtures (assertions must target the server module's dynamic predicates)
 % ---------------------------------------------------------------------------
@@ -666,6 +701,9 @@ cleanup_fake_game :-
     server:retractall(dead_socket(_)),
     server:retractall(bomb_event(_, _, _)),
     server:retractall(bomb_seq(_)), server:assertz(bomb_seq(0)),
+    server:retractall(bot(_)),
+    server:retractall(bot_personality(_, _)),
+    server:retractall(player_name(bot(_), _)),
     server:retractall(previous_winner(_, _)), server:asserta(previous_winner(none, none)).
 
 :- end_tests(server_moves).
