@@ -17,7 +17,7 @@
 %
 % Run with: swipl server.pl   (or ./run)
 
-:- module(server, [start/0, server_port/1, handle_ws/4, handle_message/2, handle_move/2, handle_kick_all/0, apply_move/3, settle/2, place_term/2, game_is_over/1, extract_player_index/2, client_action_allowed/2, start_new_game/0, update_game/1, broadcast/1, player_view/3, send_json/2, seat_client/4, remove_client/1, players/1, game/1, handle_player_left/2, broadcast_event/2, broadcast_event/3, bomb_beaten/3, add_bot/1, remove_bot/1, bot/1]).
+:- module(server, [start/0, server_port/1, handle_ws/4, handle_message/2, handle_move/2, handle_kick_all/0, apply_move/3, settle/2, place_term/2, game_is_over/1, extract_player_index/2, client_action_allowed/2, start_new_game/0, update_game/1, broadcast/1, player_view/3, send_json/2, seat_client/4, remove_client/1, players/1, game/1, handle_player_left/2, broadcast_event/2, broadcast_event/3, bomb_beaten/3, add_bot/1, remove_bot/1, bot/1, bot_character/2, bot_personality/2, bot_pick_combination/3]).
 :- use_module(library(http/http_server)).
 :- use_module(library(http/websocket)).
 :- use_module(library(http/http_files)).
@@ -366,7 +366,8 @@ handle_check_room(Request) :-
 % Admin: live status (counts + full game state for the admin view).
 handle_admin_status(Request) :-
     (   authorized_admin(Request)
-    ->  players(Players),
+    ->  catch(resume_pending_bot, _, true),   % all-bot room: no connection to trigger it
+        players(Players),
         length(Players, N),
         spectators(Specs),
         length(Specs, S),
@@ -405,21 +406,16 @@ handle_admin_status(Request) :-
 hand_json(Hand, HandJ) :-
     maplist(card_json, Hand, HandJ).
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+% Admin: kick everyone (see handle_kick_all). The kick runs in a separate
+% thread: closing the WebSocket connections disrupts keep-alive HTTP
+% connections, so the reply must complete first.
+handle_admin_kick(Request) :-
+    (   authorized_admin(Request)
+    ->  format(user_error, 'ADMIN KICK requested~n', []),
+        reply_json_dict(_{ok:true, kicked:all}),
+        thread_create(admin_kick_thread, _, [detached(true)])
+    ;   reply_json_dict(_{error:unauthorized}, [status(401)])
+    ).
 
 admin_kick_thread :-
     catch(with_mutex(tienlen_game, handle_kick_all),
@@ -608,6 +604,7 @@ seat_client(WS, Token, Ident, LastBomb) :-
     % is created lazily on the first connection).
     catch((get_time(T), retractall(last_seen(WS, _)), assertz(last_seen(WS, T))), _, true),
     catch(start_watchdog, _, true),
+    catch(resume_pending_bot, _, true),
     players(List),
     (   memberchk(WS, List) -> true    % already seated (shouldn't happen)
     ;   persistent_mode,
@@ -721,25 +718,41 @@ save_room_state :-
                        (   player_name(WS, Name) -> true ; Name = null   )
                    ),
                    Names),
+           findall(bot(Seat, Personality),
+                   (   nth0(Seat, Players, WS), WS = bot(Seat),
+                       (   bot_personality(Seat, Personality)
+                       ->  true
+                       ;   Personality = random
+                       )
+                   ),
+                   Bots),
            (   game(GS) -> true ; GS = none   ),
            round_log(Log),
            state_file(File),
            open(File, write, Stream),
-           write_term(Stream, room_state(Owners, Names, GS, Log), [quoted(true)]),
+           write_term(Stream, room_state(Owners, Names, Bots, GS, Log), [quoted(true)]),
            write(Stream, '.\n'),
            close(Stream)),
           E, format(user_error, 'Room state save failed: ~q~n', [E])).
 
 % Load the room state from disk on startup (persistent mode only). The
 % seats are rebuilt as placeholder atoms (dead sockets): the owners
-% reclaim them on reconnect via their identity tokens.
+% reclaim them on reconnect via their identity tokens. Bot seats are
+% restored as bots (they have no socket to lose). If the saved game
+% waits on a bot's turn, the bot is scheduled to resume it - without
+% this, a restart mid-bot-turn would stall the game forever.
 load_room_state :-
     \+ persistent_mode, !.
 load_room_state :-
     (   catch((state_file(File),
                open(File, read, Stream),
-               read_term(Stream, room_state(Owners, Names, GS, Log), []),
-               close(Stream)),
+               read_term(Stream, State, []),
+               close(Stream),
+               (   State = room_state(Owners, Names, GS, Log)      % pre-bot format
+               ->  Bots = []
+               ;   State = room_state(Owners, Names, Bots, GS, Log)
+               )
+              ),
               _, fail)
     ->  length(Owners, N),
         findall(WS,
@@ -752,6 +765,27 @@ load_room_state :-
                assertz(seat_owner(Seat, Owner))),
         forall((nth0(Seat, Players, WS), nth0(Seat, Names, Name), Name \== null),
                assertz(player_name(WS, Name))),
+        % Restore bots: their seats are the bot atoms again (not
+        % persist_seat_N placeholders), so turns, the roster and the
+        % bot scheduling all see them as bots. The name asserted above
+        % moves with the seat: re-assert it for the bot's entry.
+        include([bot(Seat, _)]>>(Seat < N), Bots, ValidBots),
+        foldl([bot(Seat, Personality), P0, P1]>>(
+                  assertz(bot(Seat)),
+                  assertz(bot_personality(Seat, Personality)),
+                  bot_ws(Seat, BotWS),
+                  (   nth0(Seat, P0, OldWS),
+                      player_name(OldWS, Name)
+                  ->  assertz(player_name(BotWS, Name))
+                  ;   true
+                  ),
+                  replace_at(Seat, P0, BotWS, P1)
+              ),
+              ValidBots, Players, NewPlayers),
+        (   NewPlayers == Players
+        ->  true
+        ;   retractall(players(_)), assertz(players(NewPlayers))
+        ),
         (   GS == none
         ->  true    % no game was running: nothing to restore
         ;   retractall(game(_)), assertz(game(GS))
@@ -762,7 +796,16 @@ load_room_state :-
         ->  retractall(round_log(_)), assertz(round_log(Log))
         ;   true
         ),
-        format(user_error, 'Persistent room state loaded: ~w seat(s)~n', [N])
+        % A restored game waiting on a bot's turn: the restart killed
+        % its scheduled thread. Schedule the resume after the server is
+        % up (a thread created here would block http_daemon's fork).
+        (   game(RestoredGS), \+ game_is_over(RestoredGS),
+            RestoredGS = game_state(_, _, _, _, _, _, next_move(Seat, Action)),
+            bot(Seat), Action \== game_over
+        ->  assertz(bot_resume_pending)
+        ;   true
+        ),
+        format(user_error, 'Persistent room state loaded: ~w seat(s), ~w bot(s)~n', [N, Bots])
     ;   format(user_error, 'No persistent room state found (fresh room)~n', [])
     ).
 
@@ -802,6 +845,20 @@ start_watchdog :-
     ->  true
     ;   asserta(watchdog_running),
         thread_create(watchdog_loop, _, [detached(true)])
+    ).
+
+% Resume a bot turn that was pending at load time (see bot_resume_pending).
+% Runs under the game mutex: the game may have moved on (or ended)
+% while the flag waited, so the state is re-checked before scheduling.
+resume_pending_bot :-
+    (   bot_resume_pending
+    ->  with_mutex(tienlen_game,
+                   (   retractall(bot_resume_pending),
+                       (   game(GS), \+ game_is_over(GS)
+                       ->  maybe_schedule_bot(GS)
+                       ;   true
+                       )))
+    ;   true
     ).
 
 :- dynamic watchdog_running/0.
@@ -1022,6 +1079,13 @@ request_seat(WS, Seat) :-
 
 % Best-effort liveness probe: check the websocket's underlying streams.
 % A closed/dead stream reports status(closed); a healthy one does not.
+% A bot has no socket: it is alive exactly while its bot/1 fact exists.
+% A kicked bot's placeholder entry (fact retracted, entry kept for seat
+% stability) reads as dead - so spectators can take the seat and the
+% next game start prunes it, like any departed human's socket.
+socket_alive(bot(Seat)) :-
+    !,
+    bot(Seat).
 socket_alive(WS) :-
     catch((stream_pair(WS, In, Out),
            (   var(Out)
@@ -1441,6 +1505,8 @@ handle_kick_all :-
     retractall(players(_)), assertz(players([])),
     retractall(spectators(_)), assertz(spectators([])),
     retractall(game(_)),
+    retractall(bot(_)),
+    retractall(bot_personality(_, _)),
     retractall(left_seats(_)), assertz(left_seats([])),
     retractall(session(_, _)),
     retractall(seat_owner(_, _)),
@@ -1506,13 +1572,57 @@ game_is_over(game_state(_, _, _, _, _, _, next_move(_, game_over))).
 % roster and the log all work unchanged) - it just has no socket. Its
 % "connection" is the atom bot(Seat). When a game state lands on a
 % bot's turn, update_game schedules the bot to move after a short
-% human-like delay; the bot then picks a RANDOM legal play and submits
-% it through the same handle_move pipeline a human uses, so logging,
-% bombs and broadcasts work for free.
+% human-like delay; the bot then picks a legal play according to its
+% personality and submits it through the same handle_move pipeline a
+% human uses, so logging, bombs and broadcasts work for free.
 % ---------------------------------------------------------------------------
 
 % bot(Seat): this seat is a bot.
 :- dynamic bot/1.
+
+% bot_personality(Seat, Personality): how this bot picks its moves
+% (see bot_pick_combination/3).
+:- dynamic bot_personality/2.
+
+% A game restored from disk that waits on a bot's turn: the restart
+% killed the scheduled bot thread. The resume cannot be scheduled at
+% load time (a thread created before http_daemon blocks its fork), so
+% it is recorded here and picked up after the server is up (first
+% connection or admin poll).
+:- dynamic bot_resume_pending/0.
+
+% The character pool: a name and a personality per bot. add_bot picks a
+% character that is not already seated, so a room never shows two bots
+% with the same name.
+bot_character('JujuBot', random).
+bot_character('MewuuBot', smart).
+bot_character('BaoBot', mid).
+bot_character('LaidBackBot', mid).
+bot_character('LolexBot', aggressive).
+bot_character('EveemeepBot', smart).
+bot_character('TinkauBot', random).
+bot_character('FishBot', random).
+bot_character('GloqqxBot', aggressive).
+
+% A random character not already seated. If the whole pool is in use
+% (more bots than characters - the pool outnumbers the seats, so that
+% takes a hand-edited state file), any character will do.
+pick_bot_character(Name, Personality) :-
+    findall(Name-Personality,
+            (   bot_character(Name, Personality),
+                \+ bot_name_in_use(Name)
+            ),
+            Chars),
+    (   Chars == []
+    ->  bot_character(Name, Personality)
+    ;   random_member(Name-Personality, Chars)
+    ).
+
+bot_name_in_use(Name) :-
+    bot(Seat),
+    bot_ws(Seat, WS),
+    player_name(WS, Name),
+    !.
 
 % The bot's player-list entry (its "socket").
 bot_ws(Seat, bot(Seat)).
@@ -1564,31 +1674,41 @@ add_bot(Seat) :-
     ->  bot_ws(Seat, WS),
         append(Players, [WS], NewPlayers),
         retractall(players(_)), assertz(players(NewPlayers)),
+        pick_bot_character(Name, Personality),
         assertz(bot(Seat)),
+        assertz(bot_personality(Seat, Personality)),
         retractall(player_name(WS, _)),
-        assertz(player_name(WS, 'Bot')),
+        assertz(player_name(WS, Name)),
         save_room_state,
-        format(user_error, 'Bot seated at ~w~n', [Seat]),
+        format(user_error, 'Bot ~w (~w) seated at ~w~n', [Name, Personality, Seat]),
         broadcast_lobby
     ;   format(user_error, 'Add bot: seat ~w not open (next is ~w)~n', [Seat, N])
     ).
 
-% Remove a bot (admin kick on a bot seat): drop it from the players
-% list, take it out of a running game, forget the marker.
+% Remove a bot (admin kick on a bot seat): take it out of a running
+% game, forget the marker, free the seat.
 remove_bot(Seat) :-
     bot(Seat),
     !,
     bot_ws(Seat, WS),
     (   game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS)
-    ->  handle_player_left(Seat, GS)
-    ;   true
-    ),
-    players(Players),
-    (   select(WS, Players, Rest)
-    ->  retractall(players(_)), assertz(players(Rest))
-    ;   true
+    ->  % Mid-game: take the bot out of the game but KEEP its entry in
+        % the players list as a dead placeholder (exactly like a
+        % departed human's socket), so the seat indices of the running
+        % game stay stable - compacting here would shift every later
+        % seat under the game state and stall it. The placeholder is
+        % offered to spectators and pruned when the next game starts.
+        handle_player_left(Seat, GS),
+        promote_spectator(Seat)
+    ;   % No game running: compacting the lobby is safe.
+        players(Players),
+        (   select(WS, Players, Rest)
+        ->  retractall(players(_)), assertz(players(Rest))
+        ;   true
+        )
     ),
     retractall(bot(Seat)),
+    retractall(bot_personality(Seat, _)),
     retractall(player_name(WS, _)),
     save_room_state,
     broadcast_lobby.
@@ -1628,11 +1748,11 @@ handle_move_bot(Seat, Dict) :-
     bot_ws(Seat, WS),
     handle_move(WS, Dict).
 
-% Pick a random legal move for the bot given the current state.
+% Pick a legal move for the bot given the current state.
 %   forced pass  -> pass
-%   free move    -> a random legal combination that beats the table
-%                   (or any combination on an empty table); if none
-%                   beats, pass.
+%   free move    -> a legal combination that beats the table (or any
+%                   combination on an empty table), chosen according to
+%                   the bot's personality; if none beats, pass.
 bot_choose_move(_, _, pass, _{action:pass}) :-
     !.
 bot_choose_move(GS, Seat, make_move, Dict) :-
@@ -1650,11 +1770,62 @@ bot_choose_move(GS, Seat, make_move, Dict) :-
     ),
     (   Combs == []
     ->  Dict = _{action:pass}
-    ;   length(Combs, Count),
-        random_between(1, Count, Pick),
-        nth1(Pick, Combs, Comb),
+    ;   (   bot_personality(Seat, Personality)
+        ->  true
+        ;   Personality = random        % unrecorded personality: random
+        ),
+        bot_pick_combination(Personality, Combs, Comb),
         combination_dict(Comb, Dict)
     ).
+
+% How each personality picks its play from the legal combinations:
+%   random      - any legal play (all moves equally likely)
+%   smart       - the weakest play that gets the job done (keeps the
+%                 strong cards for when they matter)
+%   aggressive  - the strongest play (dumps high cards and bombs early)
+%   mid         - flips a coin between smart and aggressive
+bot_pick_combination(random, Combs, Comb) :-
+    !,
+    random_member(Comb, Combs).
+bot_pick_combination(smart, Combs, Comb) :-
+    !,
+    weakest_combination(Combs, Comb).
+bot_pick_combination(aggressive, Combs, Comb) :-
+    !,
+    strongest_combination(Combs, Comb).
+bot_pick_combination(mid, Combs, Comb) :-
+    (   random_member(Kind, [weakest, strongest])
+    ->  (   Kind == weakest
+        ->  weakest_combination(Combs, Comb)
+        ;   strongest_combination(Combs, Comb)
+        )
+    ;   random_member(Comb, Combs)
+    ).
+
+% A combination's strength is its highest card (the card an opponent
+% would have to beat).
+combination_score(Comb, Score) :-
+    combination_cards(Comb, Cards),
+    maplist(card_score, Cards, Scores),
+    max_list(Scores, Score).
+
+combination_cards(single(C), [C]).
+combination_cards(pair(Cards), Cards).
+combination_cards(three_of_kind(Cards), Cards).
+combination_cards(four_of_kind(Cards), Cards).
+combination_cards(sequence(Cards), Cards).
+combination_cards(double_sequence(Cards), Cards).
+
+weakest_combination(Combs, Comb) :-
+    maplist([C, S-C]>>combination_score(C, S), Combs, Scored),
+    msort(Scored, [_-Comb|_]).
+weakest_combination([Comb], Comb).
+
+strongest_combination(Combs, Comb) :-
+    maplist([C, S-C]>>combination_score(C, S), Combs, Scored),
+    msort(Scored, Sorted),
+    last(Sorted, _-Comb).
+strongest_combination([Comb], Comb).
 
 % Every combination the engine's hand finder knows about, as a place
 % term (single/pair/three/four/sequence/double_sequence). The finder
@@ -2077,18 +2248,3 @@ send_json(WS, JSON) :-
 % ---------------------------------------------------------------------------
 
 extract_player_index(game_state(_, _, _, _, _, _, next_move(PlayerIndex, _)), PlayerIndex).
-
-% bot_character/2 -- has a name an a personality.
-bot_character(1, "JujuBot", random).
-bot_character(2, "MewuuBot", smart).
-bot_character(3, "BaoBot", mid).
-bot_character(4, "LaidBackBot", mid).
-bot_character(5, "LolexBot", aggressive).
-bot_character(6, "EveemeepBot", smart).
-bot_character(7, "TinkauBot", random).
-bot_character(8, "FishBot", random).
-bot_character(9, "GloqqxBot", aggresive).
-
-pick_random_bot(Bot) :-
-    findall(bot_character(N, P), bot_character(N, P), Bots),
-    random_member(Bot, Bots).

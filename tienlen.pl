@@ -135,17 +135,31 @@ get_clockwise_index(Index, NumberOfPlayers, PossibleNextPlayer) :-
     Index >= NumberOfPlayers -> PossibleNextPlayer =  0; PossibleNextPlayer = Index.
 
 next_player(UpdatedHands, PlayerStates, CurrentIndex, NextPlayerIndex) :-
+    next_player_(UpdatedHands, PlayerStates, CurrentIndex, CurrentIndex, NextPlayerIndex).
+
+% The scan remembers the seat it started from: if it comes all the way
+% back to StartIndex, every other seat is either passed or out of
+% cards. The turn then stays with the current player - the callers
+% detect exactly this ("next player is the placer" = nobody can beat
+% it, "next player is the passer" = fall through to the pile-clear
+% clause). Without the guard the recursion cycles forever.
+next_player_(UpdatedHands, PlayerStates, StartIndex, CurrentIndex, NextPlayerIndex) :-
     writeln('Checking next player'),
     length(UpdatedHands, NumberOfPlayers), 
     PossibleNextIndex is CurrentIndex + 1,
     get_clockwise_index(PossibleNextIndex, NumberOfPlayers, PossibleNextPlayer),
-    nth0(PossibleNextPlayer, UpdatedHands, NextPlayerHand),
-    nth0(PossibleNextPlayer, PlayerStates, PassValue),
-    ShouldPass = (PassValue == pass, writeln('Already passed'); NumberOfCardsInHand = 0),
-    length(NextPlayerHand, NumberOfCardsInHand),
-    ( 
-        ShouldPass -> next_player(UpdatedHands, PlayerStates, PossibleNextPlayer, NextPlayerIndex); 
-        NextPlayerIndex = PossibleNextPlayer
+    (   PossibleNextPlayer == StartIndex
+    ->  NextPlayerIndex = StartIndex        % nobody else can act
+    ;   nth0(PossibleNextPlayer, UpdatedHands, NextPlayerHand),
+        nth0(PossibleNextPlayer, PlayerStates, PassValue),
+        length(NextPlayerHand, NumberOfCardsInHand),
+        (   (   PassValue == pass
+            ;   NumberOfCardsInHand == 0
+            )
+        ->  writeln('Already passed'),
+            next_player_(UpdatedHands, PlayerStates, StartIndex, PossibleNextPlayer, NextPlayerIndex)
+        ;   NextPlayerIndex = PossibleNextPlayer
+        )
     ).
 
 % We can also beat no cards in play
@@ -1055,6 +1069,34 @@ test(player_may_make_any_move) :-
 test(sort_by_score_hand) :-
     get_predefined_hands(_, _, _, P4),
     sort_by_score(P4, [card(3,spades),card(3,diamonds),card(4,diamonds),card(4,hearts),card(6,hearts),card(7,diamonds),card(8,hearts),card(9,clubs),card(10,spades),card(10,hearts),card(j,diamonds),card(k,diamonds),card(2,clubs)]).
+
+% A player places their LAST card while every other seat is either
+% passed or already out: next_player must terminate (it used to cycle
+% through the passed seats forever, spinning the server at 100% CPU
+% and stalling the game under the mutex).
+test(last_card_placed_while_all_others_passed_terminates) :-
+    GS = game_state([[],[card(10,clubs)],[card(3,hearts),card(4,spades)],[card(5,hearts),card(6,spades),card(7,diamonds)]],
+                    [first,in_play,pass,pass],
+                    single(card(8,hearts)), [], 0, [[first,second,third,fourth]],
+                    next_move(1, place(single(card(10,clubs))))),
+    catch(call_with_time_limit(5, interpret_tienlen(GS, NewGS)),
+          time_limit_exceeded, NewGS = timeout),
+    NewGS \= timeout,
+    % The placer went out (second) and keeps the lead on a cleared pile.
+    get_next_move(NewGS, next_move(1, make_move)),
+    get_cards_in_play(NewGS, none).
+
+% Everyone else is passed or out and the current player must PASS
+% (forced pass): the scan must terminate and hand the turn somewhere
+% sane instead of cycling.
+test(forced_pass_when_all_others_passed_terminates) :-
+    GS = game_state([[],[card(3,hearts)],[card(4,spades)],[card(5,hearts)]],
+                    [first,in_play,pass,pass],
+                    single(card(8,hearts)), [], 0, [],
+                    next_move(1, pass)),
+    catch(call_with_time_limit(5, interpret_tienlen(GS, NewGS)),
+          time_limit_exceeded, NewGS = timeout),
+    NewGS \= timeout.
 
 test(continue_new_game_after_game_over) :-
     GS = game_state([[card(8,clubs)],[],[],[]],[fourth,first,second,third],single(card(3,diamonds)),[single(card(3,spades)),single(card(3,hearts)),single(card(4,spades)),single(card(4,clubs)),single(card(10,spades)),single(card(10,diamonds)),single(card(q,clubs)),single(card(2,clubs)),single(card(2,diamonds)),three_of_kind([card(5,spades),card(5,diamonds),card(5,hearts)]),three_of_kind([card(9,spades),card(9,diamonds),card(9,hearts)]),pair([card(6,spades),card(6,diamonds)]),pair([card(8,spades),card(8,diamonds)]),pair([card(2,spades),card(2,hearts)]),sequence([card(j,spades),card(q,hearts),card(k,hearts),card(a,spades)]),sequence([card(j,hearts),card(q,spades),card(k,spades),card(a,diamonds)]),sequence([card(5,clubs),card(6,clubs),card(7,clubs)]),sequence([card(6,hearts),card(7,diamonds),card(8,hearts)]),sequence([card(q,diamonds),card(k,clubs),card(a,clubs)]),pair([card(7,spades),card(7,hearts)]),single(card(3,clubs)),single(card(10,clubs)),single(card(k,diamonds)),single(card(a,hearts)),single(card(j,clubs)),pair([card(4,diamonds),card(4,hearts)]),sequence([card(9,clubs),card(10,hearts),card(j,diamonds)])],3,[[fourth,first,second,third]],next_move(1,game_over)),
