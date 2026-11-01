@@ -700,6 +700,37 @@ test(remove_bot_mid_game_keeps_name_on_placeholder) :-
     server:player_name(bot(2), 'MewuuBot'),
     cleanup_fake_game.
 
+% The bot's move pool must not be skewed by the hand finder's
+% decompositions: a single appears in every decomposition, a pair or
+% sequence only in some, so without deduplication random bots played
+% singles almost exclusively.
+test(bot_pool_is_deduplicated) :-
+    Hand = [card(5,spades), card(5,hearts), card(6,clubs), card(7,diamonds), card(k,hearts)],
+    findall(Comb, server:bot_combination(Hand, Comb), Combs0),
+    sort(Combs0, Deduped),
+    length(Combs0, Raw), length(Deduped, N),
+    Raw > N,                       % duplicates were present
+    memberchk(pair([card(5,spades),card(5,hearts)]), Deduped),
+    memberchk(sequence([card(5,hearts),card(6,clubs),card(7,diamonds)]), Deduped).
+
+% smart must value shedding multiple low cards: a pair of 3s is a
+% better lead than a single 3 (it empties the hand faster). Without
+% the per-card discount smart always dribbled the lowest single.
+test(smart_bot_prefers_low_pair_over_low_single) :-
+    Combs = [single(card(3,spades)), single(card(9,hearts)),
+             pair([card(3,hearts),card(3,diamonds)])],
+    server:weakest_combination(Combs, Comb),
+    Comb = pair([card(3,hearts),card(3,diamonds)]).
+
+% aggressive must value multi-card power: a pair of aces outranks a
+% single 2. Without the per-card bonus aggressive also always picked
+% the highest single.
+test(aggressive_bot_prefers_high_pair_over_high_single) :-
+    Combs = [single(card(2,diamonds)), single(card(a,spades)),
+             pair([card(a,spades),card(a,hearts)])],
+    server:strongest_combination(Combs, Comb),
+    Comb = pair([card(a,spades),card(a,hearts)]).
+
 % ---------------------------------------------------------------------------
 % Fixtures (assertions must target the server module's dynamic predicates)
 % ---------------------------------------------------------------------------

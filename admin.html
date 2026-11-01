@@ -589,6 +589,7 @@
     <script>
         const SUITS = { hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' };
         const ORD = { first: '1st', second: '2nd', third: '3rd', fourth: '4th' };
+        const PLACE_ORDER = { first: 1, second: 2, third: 3, fourth: 4 };
 
         function cardEl(c) {
             const el = document.createElement('span');
@@ -709,9 +710,12 @@
                 '</div>';
             sb.forEach((round, i) => {
                 html += '<div class=round-row><span class=round-label>R' + (i + 1) + '</span>';
-                round.forEach((place, seat) => {
-                    html += '<span class=round-item>' + (ORD[place] || place) + ': ' + label(seat) + '</span>';
-                });
+                // Sorted by placement (1st, 2nd, ...), not seat order.
+                round.map((place, seat) => ({ place, seat }))
+                    .sort((a, b) => PLACE_ORDER[a.place] - PLACE_ORDER[b.place])
+                    .forEach(({ place, seat }) => {
+                        html += '<span class=round-item>' + (ORD[place] || place) + ': ' + label(seat) + '</span>';
+                    });
                 html += '</div>';
             });
             sec.innerHTML = html;

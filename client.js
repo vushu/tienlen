@@ -792,8 +792,12 @@ function renderGameOver(data) {
     let history = '';
     if (Array.isArray(data.scoreboard) && data.scoreboard.length > 0) {
         const rounds = data.scoreboard.map((round, i) => {
-            const items = round.map((place, seat) =>
-                `<span class="round-item${seat === data.your_seat ? ' you' : ''}">${ordinal(placeOrder(place))}: ${seatLabel(seat)}</span>`);
+            // Sorted by placement (1st, 2nd, ...), not seat order.
+            const items = round
+                .map((place, seat) => ({ place, seat }))
+                .sort((a, b) => placeOrder(a.place) - placeOrder(b.place))
+                .map(({ place, seat }) =>
+                    `<span class="round-item${seat === data.your_seat ? ' you' : ''}">${ordinal(placeOrder(place))}: ${seatLabel(seat)}</span>`);
             return `<div class="round-row"><span class="round-label">R${i + 1}</span>${items.join('')}</div>`;
         });
         // Win tally: 1st places per player across all rounds.

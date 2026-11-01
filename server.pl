@@ -1777,17 +1777,23 @@ bot_choose_move(GS, Seat, make_move, Dict) :-
     nth0(Seat, Hands, Hand),
     (   CIP == none
     ->  % Empty table: any combination is legal.
-        findall(Comb, bot_combination(Hand, Comb), Combs)
+        findall(Comb, bot_combination(Hand, Comb), Combs0)
     ;   % Must beat what is on the table.
         findall(Comb,
                 (   bot_combination(Hand, Comb),
                     beats(Comb, CIP)
                 ),
-                Combs)
+                Combs0)
     ),
-    (   Combs == []
+    (   Combs0 == []
     ->  Dict = _{action:pass}
-    ;   (   bot_personality(Seat, Personality)
+    ;   % The raw pool is skewed: the hand finder returns whole-hand
+        % decompositions, and a single appears in every decomposition
+        % while a pair or sequence appears in only some - so singles
+        % outnumber multi-card combinations many times over. Dedupe so
+        % each distinct combination counts once.
+        sort(Combs0, Combs),
+        (   bot_personality(Seat, Personality)
         ->  true
         ;   Personality = random        % unrecorded personality: random
         ),
@@ -1833,13 +1839,36 @@ combination_cards(four_of_kind(Cards), Cards).
 combination_cards(sequence(Cards), Cards).
 combination_cards(double_sequence(Cards), Cards).
 
+% "Cheapness" for the smart personality: how much strength the bot
+% spends per card shed. A pair of 3s (max 34, 2 cards) is a better deal
+% than a single 3 (31, 1 card) - both get rid of low cards, but the
+% pair sheds twice as many. Without the per-card discount smart would
+% always dribble the absolute lowest single and never play a combo.
+cheapness(Comb, Cheap) :-
+    combination_cards(Comb, Cards),
+    maplist(card_score, Cards, Scores),
+    max_list(Scores, Max),
+    length(Cards, N),
+    Cheap is Max - (N - 1) * 10.
+
+% "Power" for the aggressive personality: multi-card plays of the same
+% top rank are stronger than the lone card (a pair of 2s dominates a
+% single 2). Without the per-card bonus aggressive would also always
+% pick a single - the highest card in any hand is a single.
+power(Comb, Power) :-
+    combination_cards(Comb, Cards),
+    maplist(card_score, Cards, Scores),
+    max_list(Scores, Max),
+    length(Cards, N),
+    Power is Max + (N - 1) * 10.
+
 weakest_combination(Combs, Comb) :-
-    maplist([C, S-C]>>combination_score(C, S), Combs, Scored),
+    maplist([C, S-C]>>cheapness(C, S), Combs, Scored),
     msort(Scored, [_-Comb|_]).
 weakest_combination([Comb], Comb).
 
 strongest_combination(Combs, Comb) :-
-    maplist([C, S-C]>>combination_score(C, S), Combs, Scored),
+    maplist([C, S-C]>>power(C, S), Combs, Scored),
     msort(Scored, Sorted),
     last(Sorted, _-Comb).
 strongest_combination([Comb], Comb).
