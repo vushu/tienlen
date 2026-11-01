@@ -678,6 +678,28 @@ test(remove_bot_in_lobby_renumbers_later_bots) :-
     server:player_name(bot(1), 'MewuuBot'),
     cleanup_fake_game.
 
+% A mid-game bot kick keeps a dead placeholder for seat stability; its
+% name must stay on the placeholder so the roster (and admin view) shows
+% who sat there, not a false "Player N".
+test(remove_bot_mid_game_keeps_name_on_placeholder) :-
+    GS = game_state([[card(3,spades)],[card(4,hearts)],[card(5,hearts)]],
+                    [in_play,in_play,in_play],
+                    single(card(3,hearts)), [], 0, [], next_move(0, make_move)),
+    server:retractall(game(_)), server:assertz(game(GS)),
+    server:retractall(players(_)),
+    server:assertz(players([human_ws, bot(1), bot(2)])),
+    server:retractall(bot(_)), server:assertz(bot(1)), server:assertz(bot(2)),
+    server:retractall(bot_personality(_, _)),
+    server:assertz(bot_personality(1, random)), server:assertz(bot_personality(2, smart)),
+    server:retractall(player_name(bot(1), _)), server:assertz(player_name(bot(1), 'BaoBot')),
+    server:retractall(player_name(bot(2), _)), server:assertz(player_name(bot(2), 'MewuuBot')),
+    server:remove_bot(1),
+    players(P), P == [human_ws, bot(1), bot(2)],   % placeholder kept
+    \+ bot(1),                                      % fact gone: reads dead
+    server:player_name(bot(1), 'BaoBot'),          % name kept for the roster
+    server:player_name(bot(2), 'MewuuBot'),
+    cleanup_fake_game.
+
 % ---------------------------------------------------------------------------
 % Fixtures (assertions must target the server module's dynamic predicates)
 % ---------------------------------------------------------------------------

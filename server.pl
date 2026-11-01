@@ -1115,6 +1115,13 @@ accept_seat(WS, Seat) :-
             ->  send_json(WS, json([type=error, message=seat_taken]))
             ;   select(WS, Specs, Remaining),
                 retract(spectators(Specs)), assertz(spectators(Remaining)),
+                % Drop the departed occupant's name (a kicked bot's
+                % placeholder kept it for the roster): the seat now
+                % belongs to the joiner, whose own name takes over.
+                (   nth0(Seat, Players, Departed),
+                    retractall(player_name(Departed, _))
+                ;   true
+                ),
                 replace_at(Seat, Players, WS, NewPlayers),
                 retract(players(Players)), assertz(players(NewPlayers)),
                 % The seat is occupied again: it is no longer departed, so
@@ -1698,7 +1705,6 @@ remove_bot(Seat) :-
     % would then kill the renamed bot instead.
     retractall(bot(Seat)),
     retractall(bot_personality(Seat, _)),
-    retractall(player_name(WS, _)),
     (   game(GS), \+ game_is_over(GS), seat_in_game(Seat, GS)
     ->  % Mid-game: take the bot out of the game but KEEP its entry in
         % the players list as a dead placeholder (exactly like a
@@ -1706,9 +1712,14 @@ remove_bot(Seat) :-
         % game stay stable - compacting here would shift every later
         % seat under the game state and stall it. The placeholder is
         % offered to spectators and pruned when the next game starts.
+        % The name stays on the placeholder (like a departed human's):
+        % the roster and admin view keep showing who sat there instead
+        % of a false "Player N".
         handle_player_left(Seat, GS),
         promote_spectator(Seat)
-    ;   % No game running: compacting the lobby is safe.
+    ;   % No game running: compacting the lobby is safe. The name goes
+        % with the seat.
+        retractall(player_name(WS, _)),
         players(Players),
         (   select(WS, Players, Rest)
         ->  retractall(players(_)), assertz(players(Rest)),
@@ -2154,7 +2165,14 @@ prune_left_seats :-
         include([Seat]>>(nth0(Seat, Players, WS), \+ socket_alive(WS)), Left, Dead),
         (   Dead == []
         ->  true    % nothing to prune (entries were stale)
-        ;   exclude_at(Dead, Players, Remaining),
+        ;   % The pruned entries are gone for good: drop their names
+            % too (a kicked bot's placeholder kept its name for the
+            % roster; the seat is now really empty).
+            forall(member(Seat, Dead),
+                   (   nth0(Seat, Players, WS),
+                       retractall(player_name(WS, _))
+                   )),
+            exclude_at(Dead, Players, Remaining),
             retractall(players(_)), assertz(players(Remaining)),
             renumber_bots(Remaining),
             format(user_error, 'Pruned ~w departed seat(s)~n', [Dead])
